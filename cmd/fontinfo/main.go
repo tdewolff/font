@@ -15,7 +15,7 @@ import (
 
 	"github.com/tdewolff/argp"
 	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/canvas/font"
+	"github.com/tdewolff/font"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/tiff"
 	"golang.org/x/image/vector"

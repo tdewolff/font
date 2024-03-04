@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/tdewolff/argp"
-	"github.com/tdewolff/canvas/font"
+	"github.com/tdewolff/font"
 	"github.com/tdewolff/prompt"
 )
 
@@ -18,7 +18,7 @@ func main() {
 	index := 0
 	var input, output string
 
-	cmd := argp.New("Subset TTF/OTF/TTC/WOFF/WOFF2/EOT font file")
+	cmd := argp.New("Subset TTF/OTF/WOFF/WOFF2/EOT/TTC/OTC font file")
 	cmd.AddOpt(argp.Append{&chars}, "c", "char", "List of characters to keep.")
 	cmd.AddOpt(argp.Append{&names}, "n", "name", "List of glyph names to keep.")
 	cmd.AddOpt(argp.Append{&glyphs}, "g", "glyph", "List of glyph IDs to keep.")

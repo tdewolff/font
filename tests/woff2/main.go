@@ -1,8 +1,9 @@
+//go:build gofuzz
 // +build gofuzz
 
 package fuzz
 
-import "github.com/tdewolff/canvas/font"
+import "github.com/tdewolff/font"
 
 // Fuzz is a fuzz test.
 func Fuzz(data []byte) int {
