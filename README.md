@@ -1,4 +1,4 @@
-# Font [![API reference](https://img.shields.io/badge/godoc-reference-5272B4)](https://pkg.go.dev/github.com/tdewolff/canvas/font?tab=doc)
+# Font [![API reference](https://img.shields.io/badge/godoc-reference-5272B4)](https://pkg.go.dev/github.com/tdewolff/font?tab=doc)
 
 This library contains font parsers for WOFF, WOFF2, and EOT. It takes a byte-slice as input and converts it to SFNT formats (either TTF or OTF). As font formats for the web, WOFF, WOFF2, and EOT are really just containers for SFNT fonts (such as TTF and OTF) that have better compression.
 
@@ -8,7 +8,7 @@ The WOFF and WOFF2 converters have been testing using the validation tests from 
 Import using:
 
 ``` go
-import "github.com/tdewolff/canvas/font"
+import "github.com/tdewolff/font"
 ```
 
 Then we can parse any byte-slice that is in the WOFF/WOFF2/EOT file format and extract its TTF/OTF content.
