@@ -8,7 +8,7 @@ import (
 )
 
 func TestSFNTDejaVuSerifTTF(t *testing.T) {
-	b, err := ioutil.ReadFile("../resources/DejaVuSerif.ttf")
+	b, err := ioutil.ReadFile("resources/DejaVuSerif.ttf")
 	test.Error(t, err)
 
 	sfnt, err := ParseSFNT(b, 0)
@@ -31,7 +31,7 @@ func TestSFNTDejaVuSerifTTF(t *testing.T) {
 }
 
 func TestSFNTWrite(t *testing.T) {
-	b, err := ioutil.ReadFile("../resources/DejaVuSerif.ttf")
+	b, err := ioutil.ReadFile("resources/DejaVuSerif.ttf")
 	test.Error(t, err)
 
 	sfnt, err := ParseSFNT(b, 0)
@@ -49,22 +49,20 @@ func TestSFNTWrite(t *testing.T) {
 }
 
 func TestSFNTSubset(t *testing.T) {
-	b, err := ioutil.ReadFile("../resources/DejaVuSerif.ttf")
+	b, err := ioutil.ReadFile("resources/DejaVuSerif.ttf")
 	test.Error(t, err)
 
 	sfnt, err := ParseSFNT(b, 0)
 	test.Error(t, err)
 
-	subset, glyphIDs := sfnt.Subset([]uint16{0, 3, 6, 36, 37, 38, 55, 131}, WriteAllTables) // .notdef, space, #, A, B, C, T, Á
-	sfntSubset, err := ParseSFNT(subset, 0)
+	sfnt = sfnt.Subset([]uint16{0, 3, 6, 36, 37, 38, 55, 131}, SubsetOptions{Tables: KeepAllTables}) // .notdef, space, #, A, B, C, T, Á
 	test.Error(t, err)
 
-	test.T(t, len(glyphIDs), 9) // Á is a composite glyph containing two simple glyphs: 36 and 3452
-	test.T(t, glyphIDs[8], uint16(3452))
+	test.T(t, sfnt.NumGlyphs(), uint16(9)) // Á is a composite glyph containing two simple glyphs: 36 and 3452
 
-	test.T(t, sfntSubset.GlyphIndex('A'), uint16(3))
-	test.T(t, sfntSubset.GlyphIndex('B'), uint16(4))
-	test.T(t, sfntSubset.GlyphIndex('C'), uint16(5))
+	test.T(t, sfnt.GlyphIndex('A'), uint16(3))
+	test.T(t, sfnt.GlyphIndex('B'), uint16(4))
+	test.T(t, sfnt.GlyphIndex('C'), uint16(5))
 
 	//ioutil.WriteFile("out.otf", subset, 0644)
 }

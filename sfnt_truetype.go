@@ -397,7 +397,12 @@ func (glyf *glyfTable) ToPath(p Pather, glyphID, ppem uint16, x, y, f float64, h
 }
 
 func (sfnt *SFNT) parseGlyf() error {
-	// requires data from loca
+	if sfnt.Loca == nil {
+		return fmt.Errorf("glyf: missing loca table")
+	} else if sfnt.Maxp == nil {
+		return fmt.Errorf("glyf: missing maxp table")
+	}
+
 	b, ok := sfnt.Tables["glyf"]
 	if !ok {
 		return fmt.Errorf("glyf: missing table")
@@ -429,6 +434,10 @@ func (loca *locaTable) Get(glyphID uint16) (uint32, bool) {
 }
 
 func (sfnt *SFNT) parseLoca() error {
+	if sfnt.Head == nil {
+		return fmt.Errorf("loca: missing head table")
+	}
+
 	b, ok := sfnt.Tables["loca"]
 	if !ok {
 		return fmt.Errorf("loca: missing table")

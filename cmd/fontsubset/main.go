@@ -5,6 +5,11 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/tdewolff/argp"
 	"github.com/tdewolff/font"
@@ -12,36 +17,44 @@ import (
 )
 
 func main() {
-	chars := []string{} //" !\"%'(),.0-9:;?@A-Za-z-"}
+	glyphs := []string{}
+	chars := []string{}
 	names := []string{}
-	glyphs := []int{}
+	unicodes := []string{}
+	unicodeRanges := []string{}
 	index := 0
 	var input, output string
 
 	cmd := argp.New("Subset TTF/OTF/WOFF/WOFF2/EOT/TTC/OTC font file")
-	cmd.AddOpt(argp.Append{&chars}, "c", "char", "List of characters to keep.")
-	cmd.AddOpt(argp.Append{&names}, "n", "name", "List of glyph names to keep.")
-	cmd.AddOpt(argp.Append{&glyphs}, "g", "glyph", "List of glyph IDs to keep.")
-	cmd.AddOpt(&index, "", "index", "Index into font collection (used for .ttc).")
-	cmd.AddOpt(&output, "o", "output", "Output font file.")
+	cmd.AddOpt(argp.Append{&glyphs}, "g", "glyph", "List of glyph IDs to keep, eg. 1-100.")
+	cmd.AddOpt(argp.Append{&chars}, "c", "char", "List of literal characters to keep, eg. a-z.")
+	cmd.AddOpt(argp.Append{&names}, "n", "name", "List of glyph names to keep, eg. space.")
+	cmd.AddOpt(argp.Append{&unicodes}, "u", "unicode", "List of unicode IDs to keep, eg. f0fc-f0ff.")
+	cmd.AddOpt(argp.Append{&unicodeRanges}, "r", "range", "List of unicode categories or scripts to keep, eg. L (for Letters) or Latin.")
+	cmd.AddOpt(&index, "", "index", "Index into font collection (used with TTC or OTC).")
+	cmd.AddOpt(&output, "o", "output", "Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported).")
 	cmd.AddVal(&input, "input", "Input font file.")
 	cmd.Parse()
 
-	if input == "" {
-		fmt.Println("ERROR: missing input font name")
-		os.Exit(1)
-	} else if output == "" {
+	if output == "" {
 		output = input
 	}
 
-	r, err := os.Open(input)
-	if err != nil {
+	// read from file and parse font
+	var err error
+	var r *os.File
+	if input == "" || input == "-" {
+		r = os.Stdin
+	} else if r, err = os.Open(input); err != nil {
 		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	}
 	b, err := ioutil.ReadAll(r)
-	r.Close()
 	if err != nil {
+		r.Close()
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	} else if err := r.Close(); err != nil {
 		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	} else if b, err = font.ToSFNT(b); err != nil {
@@ -54,19 +67,44 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println(sfnt.Glyf.Contour(0, 0))
-	fmt.Println(sfnt.Glyf.Contour(1, 0))
-	fmt.Println(len(sfnt.Glyf.Get(0)))
-	fmt.Println(len(sfnt.Glyf.Get(1)))
+	glyphMap := map[uint16]bool{}
+	glyphMap[0] = true
 
-	glyphIDs := []uint16{0}
+	// append glyphs
 	for _, glyph := range glyphs {
-		if glyph < 0 || 65535 < glyph {
-			fmt.Println("WARNING: invalid glyph:", glyph)
+		if dash := strings.IndexByte(glyph, '-'); dash != -1 {
+			first, err := strconv.ParseInt(glyph[:dash], 10, 16)
+			if err != nil {
+				fmt.Println("ERROR: invalid glyph ID:", err)
+				os.Exit(1)
+			}
+			last, err := strconv.ParseInt(glyph[dash+1:], 10, 16)
+			if err != nil {
+				fmt.Println("ERROR: invalid glyph ID:", err)
+				os.Exit(1)
+			}
+			if last < first || first < 0 || 65535 < last {
+				fmt.Printf("ERROR: invalid glyph ID range: %d-%d\n", first, last)
+				os.Exit(1)
+			}
+			for first != last+1 {
+				glyphMap[uint16(first)] = true
+			}
 		} else {
-			glyphIDs = append(glyphIDs, uint16(glyph))
+			glyphID, err := strconv.ParseInt(glyph, 10, 16)
+			if err != nil {
+				fmt.Println("ERROR: invalid glyph ID:", err)
+				os.Exit(1)
+			}
+			if glyphID < 0 || 65535 < glyphID {
+				fmt.Println("ERROR: invalid glyph ID:", glyphID)
+				os.Exit(1)
+			}
+			glyphMap[uint16(glyphID)] = true
 		}
 	}
+
+	// append characters
 	for _, s := range chars {
 		prev := rune(-1)
 		rangeChars := false
@@ -79,7 +117,7 @@ func main() {
 					if glyphID == 0 {
 						fmt.Println("WARNING: glyph not found:", string(i))
 					} else {
-						glyphIDs = append(glyphIDs, glyphID)
+						glyphMap[glyphID] = true
 					}
 				}
 				rangeChars = false
@@ -89,7 +127,7 @@ func main() {
 				if glyphID == 0 {
 					fmt.Println("WARNING: glyph not found:", string(r))
 				} else {
-					glyphIDs = append(glyphIDs, glyphID)
+					glyphMap[glyphID] = true
 				}
 				prev = r
 			}
@@ -99,46 +137,147 @@ func main() {
 			if glyphID == 0 {
 				fmt.Println("WARNING: glyph not found: -")
 			} else {
-				glyphIDs = append(glyphIDs, glyphID)
+				glyphMap[glyphID] = true
 			}
 		}
 	}
+
+	// append glyph names
 	for _, name := range names {
 		glyphID := sfnt.FindGlyphName(name)
 		if glyphID == 0 {
 			fmt.Println("WARNING: glyph name not found:", name)
 		} else {
-			glyphIDs = append(glyphIDs, glyphID)
+			glyphMap[glyphID] = true
 		}
 	}
 
-	if _, err := os.Stat(output); err == nil {
-		if !prompt.YesNo(fmt.Sprintf("%s already exists, overwrite?", output), false) {
-			return
+	// append unicode
+	for _, code := range unicodes {
+		if dash := strings.IndexByte(code, '-'); dash != -1 {
+			first, err := strconv.ParseInt(code[:dash], 16, 32)
+			if err != nil {
+				fmt.Println("ERROR: invalid unicode codepoint:", err)
+				os.Exit(1)
+			}
+			last, err := strconv.ParseInt(code[dash+1:], 16, 32)
+			if err != nil {
+				fmt.Println("ERROR: invalid unicode codepoint:", err)
+				os.Exit(1)
+			}
+			if last < first || first < 0 {
+				fmt.Printf("ERROR: invalid unicode range: U+%4X-U+%4X\n", first, last)
+				os.Exit(1)
+			}
+			for first != last+1 {
+				glyphID := sfnt.GlyphIndex(rune(first))
+				if glyphID == 0 {
+					fmt.Printf("WARNING: glyph not found for U+%4X\n", first)
+				} else {
+					glyphMap[glyphID] = true
+				}
+			}
+		} else {
+			codepoint, err := strconv.ParseInt(code, 16, 32)
+			if err != nil {
+				fmt.Println("ERROR: invalid unicode codepoint:", err)
+				os.Exit(1)
+			} else if codepoint < 0 {
+				fmt.Printf("ERROR: invalid unicode codepoint: U+%4X\n", codepoint)
+				os.Exit(1)
+			}
+			glyphID := sfnt.GlyphIndex(rune(codepoint))
+			if glyphID == 0 {
+				fmt.Printf("WARNING: glyph not found for U+%4X\n", codepoint)
+			} else {
+				glyphMap[glyphID] = true
+			}
 		}
-		fmt.Println()
 	}
 
-	fmt.Println("Number of glyphs:", len(glyphIDs))
+	// append unicode ranges
+	for _, unicodeRange := range unicodeRanges {
+		var ok bool
+		var table *unicode.RangeTable
+		if table, ok = unicode.Categories[unicodeRange]; !ok {
+			if table, ok = unicode.Scripts[unicodeRange]; !ok {
+				fmt.Println("ERROR: invalid unicode range:", unicodeRange)
+				os.Exit(1)
+			}
+		}
+		for _, ran := range table.R16 {
+			for r := ran.Lo; r <= ran.Hi; r += ran.Stride {
+				glyphID := sfnt.GlyphIndex(rune(r))
+				if glyphID != 0 {
+					glyphMap[glyphID] = true
+				}
+
+			}
+		}
+		for _, ran := range table.R32 {
+			for r := ran.Lo; r <= ran.Hi; r += ran.Stride {
+				glyphID := sfnt.GlyphIndex(rune(r))
+				if glyphID != 0 {
+					glyphMap[glyphID] = true
+				}
+			}
+		}
+	}
+
+	// convert to sorted list, prevents duplicates
+	glyphIDs := make([]uint16, 0, len(glyphMap))
+	for glyphID := range glyphMap {
+		glyphIDs = append(glyphIDs, glyphID)
+	}
+	sort.Slice(glyphIDs, func(i, j int) bool { return glyphIDs[i] < glyphIDs[j] })
+
+	// subset font
+	sfnt = sfnt.Subset(glyphIDs, font.SubsetOptions{Tables: font.KeepMinTables})
+
+	// create font program
 	rLen := len(b)
-	b, _ = sfnt.Subset(glyphIDs, font.WriteMinTables)
+	switch ext := filepath.Ext(output); ext {
+	case ".ttf", ".otf", ".ttc", ".otc":
+		b = sfnt.Write()
+	case ".woff2":
+		if b, err = sfnt.WriteWOFF2(); err != nil {
+			fmt.Println("ERROR:", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Println("ERROR: unsupported output file extension:", ext)
+		os.Exit(1)
+	}
 	wLen := len(b)
-
 	ratio := 1.0
 	if 0 < rLen {
 		ratio = float64(wLen) / float64(rLen)
 	}
+	fmt.Println("Number of glyphs:", len(glyphIDs))
 	fmt.Printf("File size: %6v => %6v (%.1f%%)\n", formatBytes(uint64(rLen)), formatBytes(uint64(wLen)), ratio*100.0)
 
-	w, err := os.Create(output)
-	if err != nil {
-		fmt.Println("ERROR:", err)
-		os.Exit(1)
+	// write to file
+	var w *os.File
+	if output == "" || output == "-" {
+		w = os.Stdout
+	} else {
+		if _, err := os.Stat(output); err == nil {
+			if !prompt.YesNo(fmt.Sprintf("%s already exists, overwrite?", output), false) {
+				return
+			}
+		}
+		if w, err = os.Create(output); err != nil {
+			fmt.Println("ERROR:", err)
+			os.Exit(1)
+		}
 	}
-	defer w.Close()
 
 	if _, err := w.Write(b); err != nil {
-		fmt.Println("ERROR:", err)
+		w.Close()
+		fmt.Println("error:", err)
+		os.Exit(1)
+	} else if err := w.Close(); err != nil {
+		fmt.Println("error:", err)
 		os.Exit(1)
 	}
 }

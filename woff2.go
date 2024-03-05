@@ -8,7 +8,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/dsnet/compress/brotli"
+	"github.com/andybalholm/brotli"
 )
 
 // Specification:
@@ -167,11 +167,10 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	} else if MaxMemory < uncompressedSize {
 		return nil, ErrExceedsMemory
 	}
-	rBrotli, _ := brotli.NewReader(bytes.NewReader(compData), nil) // err is always nil
+	rBrotli := brotli.NewReader(bytes.NewReader(compData)) // err is always nil
 	dataBuf := bytes.NewBuffer(make([]byte, 0, uncompressedSize))
-	io.Copy(dataBuf, rBrotli)
-	if err := rBrotli.Close(); err != nil {
-		return nil, err
+	if _, err := io.Copy(dataBuf, rBrotli); err != nil {
+		return nil, fmt.Errorf("brotli: corrupted input")
 	}
 	data := dataBuf.Bytes()
 	if uint32(len(data)) != uncompressedSize {
@@ -767,5 +766,99 @@ func read255Uint16(r *BinaryReader) uint16 {
 		return uint16(r.ReadByte()) + 253*2
 	} else {
 		return uint16(code)
+	}
+}
+
+func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
+	w := NewBinaryWriter(make([]byte, sfnt.Length*6/10)) // estimated size
+	w.WriteString("wOF2")                                // signature
+	w.WriteString(sfnt.Version)                          // flavor
+	w.WriteUint32(0)                                     // length (set later)
+	w.WriteUint16(uint16(len(sfnt.Tables)))              // numTables
+	w.WriteUint16(0)                                     // reserved
+	w.WriteUint32(sfnt.Length)                           // totalSfntSize
+	w.WriteUint32(0)                                     // totalCompressedSize (set later)
+	w.WriteUint16(2)                                     // majorVersion
+	w.WriteUint16(0)                                     // minorVersion
+	w.WriteUint32(48)                                    // metaOffset
+	w.WriteUint32(0)                                     // metaLength
+	w.WriteUint32(0)                                     // metaOrigLength
+	w.WriteUint32(48)                                    // privOffset
+	w.WriteUint32(0)                                     // privLength
+
+	tags := make([]string, 0, len(sfnt.Tables))
+	for tag, _ := range sfnt.Tables {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+
+	tables := make([][]byte, len(tags))
+	for i, tag := range tags {
+		tables[i] = sfnt.Tables[tag]
+		if tag == "head" {
+			tables[i] = make([]byte, len(tables[i]))
+			copy(tables[i], sfnt.Tables[tag])
+			flags := binary.BigEndian.Uint16(tables[i][16:])
+			flags |= 0x0800 // set bit 11
+			binary.BigEndian.PutUint16(tables[i][16:], flags)
+		}
+	}
+
+	for i, tag := range tags {
+		tagIndex := -1
+		for index, woff2Tag := range woff2TableTags {
+			if woff2Tag == tag {
+				tagIndex = index
+				break
+			}
+		}
+
+		transformVersion := 0
+		if tag == "glyf" || tag == "loca" {
+			transformVersion = 3
+		}
+		w.WriteUint8(byte(transformVersion)<<6 | byte(tagIndex)&0x3F) // flags
+		if tagIndex == -1 {
+			w.WriteString(tag) // tag
+		}
+		writeUintBase128(w, uint32(len(sfnt.Tables[tag])))
+		if (tag == "glyf" || tag == "loca") && transformVersion == 0 || tag == "hmtx" && transformVersion == 1 {
+			writeUintBase128(w, uint32(len(tables[i])))
+		}
+	}
+
+	headerLength := w.Len()
+	wBrotli := brotli.NewWriter(w)
+	for _, table := range tables {
+		// TODO: transform glyf, loca, and hmtx tables
+		if _, err := wBrotli.Write(table); err != nil {
+			return nil, err
+		}
+	}
+	if err := wBrotli.Close(); err != nil {
+		return nil, err
+	}
+
+	b := w.Bytes()
+	binary.BigEndian.PutUint32(b[8:], uint32(len(b)))
+	binary.BigEndian.PutUint32(b[20:], uint32(len(b))-headerLength)
+	return b, nil
+}
+
+func writeUintBase128(w *BinaryWriter, accum uint32) {
+	// see https://www.w3.org/TR/WOFF2/#DataTypes
+	fmt.Printf("uintbase128 %32b\n", accum)
+	written := false
+	for i := 4; 0 <= i; i-- {
+		mask := uint32(0x7F) << (i * 7)
+		if v := accum & mask; written || v != 0 {
+			v >>= i * 7
+			if i != 0 {
+				v |= 0x80
+			}
+			fmt.Printf("    %8b\n", v)
+			w.WriteByte(byte(v))
+			written = true
+		}
 	}
 }

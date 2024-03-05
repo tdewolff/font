@@ -3,6 +3,7 @@ package font
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math"
 )
 
@@ -96,6 +97,17 @@ func (r *BinaryReader) Len() uint32 {
 // EOF returns true if we reached the end-of-file.
 func (r *BinaryReader) EOF() bool {
 	return r.eof
+}
+
+// Read complies with io.Reader.
+func (r *BinaryReader) Read(b []byte) (int, error) {
+	n := copy(b, r.buf[r.pos:])
+	r.pos += uint32(n)
+	if r.pos == uint32(len(r.buf)) {
+		r.eof = true
+		return n, io.EOF
+	}
+	return n, nil
 }
 
 // ReadBytes reads n bytes.
@@ -254,11 +266,15 @@ func (w *BinaryWriter) Bytes() []byte {
 	return w.buf
 }
 
+// Write complies with io.Writer.
+func (w *BinaryWriter) Write(b []byte) (int, error) {
+	w.buf = append(w.buf, b...)
+	return len(b), nil
+}
+
 // WriteBytes writes the given bytes to the buffer.
 func (w *BinaryWriter) WriteBytes(v []byte) {
-	pos := len(w.buf)
-	w.buf = append(w.buf, make([]byte, len(v))...)
-	copy(w.buf[pos:], v)
+	w.buf = append(w.buf, v...)
 }
 
 // WriteString writes the given string to the buffer.
