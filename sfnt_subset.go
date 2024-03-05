@@ -258,16 +258,15 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 			w := NewBinaryWriter(make([]byte, 0, n))
 			for subsetGlyphID, glyphID := range glyphIDs {
 				lsb := sfntOld.Hmtx.LeftSideBearing(glyphID)
-				if uint16(subsetGlyphID) < numberOfHMetrics {
+				if subsetGlyphID < int(numberOfHMetrics) {
 					adv := sfntOld.Hmtx.Advance(glyphID)
 					sfnt.Hmtx.HMetrics[subsetGlyphID].AdvanceWidth = adv
 					sfnt.Hmtx.HMetrics[subsetGlyphID].LeftSideBearing = lsb
 					w.WriteUint16(adv)
-					w.WriteInt16(lsb)
 				} else {
 					sfnt.Hmtx.LeftSideBearings[subsetGlyphID-int(numberOfHMetrics)] = lsb
-					w.WriteInt16(lsb)
 				}
+				w.WriteInt16(lsb)
 			}
 			sfnt.Tables[tag] = w.Bytes()
 		case "kern":
@@ -330,7 +329,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 			}
 		case "loca":
 			var w *BinaryWriter
-			if indexToLocFormat == 1 {
+			if indexToLocFormat == 0 {
 				// short format
 				w = NewBinaryWriter(make([]byte, 2*len(glyfOffsets)))
 				for _, offset := range glyfOffsets {
@@ -362,6 +361,8 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 
 			sfnt.Name = &nameTable{}
 		case "OS/2":
+			sfnt.Tables[tag] = table
+
 			sfnt.OS2 = sfntOld.OS2
 		case "post":
 			w := NewBinaryWriter(make([]byte, 0, 32))
