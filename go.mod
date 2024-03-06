@@ -5,7 +5,7 @@ go 1.22.0
 require (
 	github.com/andybalholm/brotli v1.1.0
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
-	github.com/tdewolff/argp v0.0.0-20240303230445-a8dec846536d
+	github.com/tdewolff/argp v0.0.0-20240305172042-155215ad3ad2
 	github.com/tdewolff/canvas v0.0.0-20240301225202-94b55b0c5a78
 	github.com/tdewolff/prompt v0.0.0-20240229160307-11febf5f2a1d
 	github.com/tdewolff/test v1.0.11-0.20231121141655-2d5236e10ae4

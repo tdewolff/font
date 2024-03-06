@@ -159,7 +159,7 @@ func (sfnt *SFNT) GlyphVerticalAdvance(glyphID uint16) uint16 {
 // GlyphBounds returns the bounding rectangle (xmin,ymin,xmax,ymax) of the glyph.
 func (sfnt *SFNT) GlyphBounds(glyphID uint16) (int16, int16, int16, int16, error) {
 	if sfnt.IsTrueType {
-		contour, err := sfnt.Glyf.Contour(glyphID, 0)
+		contour, err := sfnt.Glyf.Contour(glyphID)
 		if err != nil {
 			return 0, 0, 0, 0, err
 		}
@@ -411,16 +411,14 @@ func (sfnt *SFNT) Write() []byte {
 	offsets, lengths := make([]uint32, numTables), make([]uint32, numTables)
 	for i, tag := range tags {
 		offsets[i] = w.Len()
+		table := sfnt.Tables[tag]
 		if tag == "head" {
-			head := sfnt.Tables["head"]
-			w.WriteBytes(head[:8])
-			checksumAdjustmentPos = w.Len()
-			w.WriteUint32(0) // checksumAdjustment
-			w.WriteBytes(head[12:28])
+			checksumAdjustmentPos = w.Len() + 8
+			w.WriteBytes(table[:28])
 			w.WriteInt64(int64(time.Now().UTC().Sub(time.Date(1904, 1, 1, 0, 0, 0, 0, time.UTC)) / 1e9)) // modified
-			w.WriteBytes(head[36:])
+			w.WriteBytes(table[36:])
 		} else {
-			w.WriteBytes(sfnt.Tables[tag])
+			w.WriteBytes(table)
 		}
 		lengths[i] = w.Len() - offsets[i]
 
@@ -1165,12 +1163,12 @@ func (sfnt *SFNT) parseOS2() error {
 
 func (sfnt *SFNT) estimateOS2() {
 	if sfnt.IsTrueType {
-		contour, err := sfnt.Glyf.Contour(sfnt.GlyphIndex('x'), 0)
+		contour, err := sfnt.Glyf.Contour(sfnt.GlyphIndex('x'))
 		if err == nil {
 			sfnt.OS2.SxHeight = contour.YMax
 		}
 
-		contour, err = sfnt.Glyf.Contour(sfnt.GlyphIndex('H'), 0)
+		contour, err = sfnt.Glyf.Contour(sfnt.GlyphIndex('H'))
 		if err == nil {
 			sfnt.OS2.SCapHeight = contour.YMax
 		}

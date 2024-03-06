@@ -33,7 +33,7 @@ func main() {
 	cmd.AddOpt(argp.Append{&unicodeRanges}, "r", "range", "List of unicode categories or scripts to keep, eg. L (for Letters) or Latin.")
 	cmd.AddOpt(&index, "", "index", "Index into font collection (used with TTC or OTC).")
 	cmd.AddOpt(&output, "o", "output", "Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported).")
-	cmd.AddVal(&input, "input", "Input font file.")
+	cmd.AddArg(&input, "input", "Input font file.")
 	cmd.Parse()
 
 	if output == "" {
@@ -43,7 +43,7 @@ func main() {
 	// read from file and parse font
 	var err error
 	var r *os.File
-	if input == "" || input == "-" {
+	if input == "-" {
 		r = os.Stdin
 	} else if r, err = os.Open(input); err != nil {
 		fmt.Println("ERROR:", err)
@@ -258,7 +258,7 @@ func main() {
 
 	// write to file
 	var w *os.File
-	if output == "" || output == "-" {
+	if output == "-" {
 		w = os.Stdout
 	} else {
 		if _, err := os.Stat(output); err == nil {

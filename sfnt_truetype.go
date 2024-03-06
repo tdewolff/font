@@ -14,6 +14,7 @@ type glyfContour struct {
 	EndPoints              []uint16
 	Instructions           []byte
 	OnCurve                []bool
+	OverlapSimple          []bool
 	XCoordinates           []int16
 	YCoordinates           []int16
 }
@@ -63,6 +64,7 @@ type glyfTable struct {
 	loca *locaTable
 }
 
+// Get returns the glyph data corresponding to the passed glyphID. It returns nil if the glyph doesn't exist.
 func (glyf *glyfTable) Get(glyphID uint16) []byte {
 	start, ok1 := glyf.loca.Get(glyphID)
 	end, ok2 := glyf.loca.Get(glyphID + 1)
@@ -72,7 +74,21 @@ func (glyf *glyfTable) Get(glyphID uint16) []byte {
 	return glyf.data[start:end]
 }
 
-func (glyf *glyfTable) Dependencies(glyphID uint16, level int) ([]uint16, error) {
+// IsComposite returns true if the glyph is a composite glyph
+func (glyf *glyfTable) IsComposite(glyphID uint16) bool {
+	b := glyf.Get(glyphID)
+	if len(b) < 1 {
+		return false
+	}
+	return b[0]&0x80 != 0 // sign bit is set on numberOfContours
+}
+
+// Dependencies returns all the glyph IDs that a composite glyph uses.
+func (glyf *glyfTable) Dependencies(glyphID uint16) ([]uint16, error) {
+	return glyf.dependencies(glyphID, 0)
+}
+
+func (glyf *glyfTable) dependencies(glyphID uint16, level int) ([]uint16, error) {
 	deps := []uint16{glyphID}
 	b := glyf.Get(glyphID)
 	if b == nil {
@@ -99,7 +115,7 @@ func (glyf *glyfTable) Dependencies(glyphID uint16, level int) ([]uint16, error)
 
 			flags := r.ReadUint16()
 			subGlyphID := r.ReadUint16()
-			subDeps, err := glyf.Dependencies(subGlyphID, level+1)
+			subDeps, err := glyf.dependencies(subGlyphID, level+1)
 			if err != nil {
 				return nil, err
 			}
@@ -134,7 +150,13 @@ func glyfCompositeLength(flags uint16) (length uint32, more bool) {
 	return
 }
 
-func (glyf *glyfTable) Contour(glyphID uint16, level int) (*glyfContour, error) {
+// Contour returns the contours of a glyph. It unpacks composite glyphs into their final shape.
+func (glyf *glyfTable) Contour(glyphID uint16) (*glyfContour, error) {
+	// TODO: cache output
+	return glyf.contour(glyphID, 0)
+}
+
+func (glyf *glyfTable) contour(glyphID uint16, level int) (*glyfContour, error) {
 	b := glyf.Get(glyphID)
 	if b == nil {
 		return nil, fmt.Errorf("glyf: bad glyphID %v", glyphID)
@@ -172,6 +194,7 @@ func (glyf *glyfTable) Contour(glyphID uint16, level int) (*glyfContour, error) 
 		numPoints := int(contour.EndPoints[numberOfContours-1]) + 1
 		flags := make([]byte, numPoints)
 		contour.OnCurve = make([]bool, numPoints)
+		contour.OverlapSimple = make([]bool, numPoints)
 		for i := 0; i < numPoints; i++ {
 			if r.Len() < 1 {
 				return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
@@ -179,13 +202,15 @@ func (glyf *glyfTable) Contour(glyphID uint16, level int) (*glyfContour, error) 
 
 			flags[i] = r.ReadByte()
 			contour.OnCurve[i] = flags[i]&0x01 != 0
+			contour.OverlapSimple[i] = flags[i]&0x40 != 0
 			if flags[i]&0x08 != 0 { // REPEAT_FLAG
-				repeat := r.ReadByte()
-				for j := 1; j <= int(repeat); j++ {
+				repeats := r.ReadByte()
+				for j := 1; j <= int(repeats); j++ {
 					flags[i+j] = flags[i]
 					contour.OnCurve[i+j] = contour.OnCurve[i]
+					contour.OverlapSimple[i+j] = contour.OverlapSimple[i]
 				}
-				i += int(repeat)
+				i += int(repeats)
 			}
 		}
 
@@ -291,7 +316,7 @@ func (glyf *glyfTable) Contour(glyphID uint16, level int) (*glyfContour, error) 
 				hasInstructions = true
 			}
 
-			subContour, err := glyf.Contour(subGlyphID, level+1)
+			subContour, err := glyf.contour(subGlyphID, level+1)
 			if err != nil {
 				return nil, err
 			}
@@ -304,6 +329,7 @@ func (glyf *glyfTable) Contour(glyphID uint16, level int) (*glyfContour, error) 
 				contour.EndPoints = append(contour.EndPoints, numPoints+subContour.EndPoints[i])
 			}
 			contour.OnCurve = append(contour.OnCurve, subContour.OnCurve...)
+			contour.OverlapSimple = append(contour.OverlapSimple, subContour.OverlapSimple...)
 			for i := 0; i < len(subContour.XCoordinates); i++ {
 				x := subContour.XCoordinates[i]
 				y := subContour.YCoordinates[i]
@@ -332,7 +358,7 @@ func (glyf *glyfTable) Contour(glyphID uint16, level int) (*glyfContour, error) 
 }
 
 func (glyf *glyfTable) ToPath(p Pather, glyphID, ppem uint16, x, y, f float64, hinting Hinting) error {
-	contour, err := glyf.Contour(glyphID, 0)
+	contour, err := glyf.Contour(glyphID)
 	if err != nil {
 		return err
 	}
@@ -420,14 +446,14 @@ func (sfnt *SFNT) parseGlyf() error {
 ////////////////////////////////////////////////////////////////
 
 type locaTable struct {
-	format int16
+	Format int16
 	data   []byte
 }
 
 func (loca *locaTable) Get(glyphID uint16) (uint32, bool) {
-	if loca.format == 0 && int(glyphID)*2 < len(loca.data) {
+	if loca.Format == 0 && int(glyphID)*2 < len(loca.data) {
 		return 2 * uint32(binary.BigEndian.Uint16(loca.data[int(glyphID)*2:])), true
-	} else if loca.format == 1 && int(glyphID)*4 < len(loca.data) {
+	} else if loca.Format == 1 && int(glyphID)*4 < len(loca.data) {
 		return binary.BigEndian.Uint32(loca.data[int(glyphID)*4:]), true
 	}
 	return 0, false
@@ -444,7 +470,7 @@ func (sfnt *SFNT) parseLoca() error {
 	}
 
 	sfnt.Loca = &locaTable{
-		format: sfnt.Head.IndexToLocFormat,
+		Format: sfnt.Head.IndexToLocFormat,
 		data:   b,
 	}
 	//sfnt.Loca.Offsets = make([]uint32, sfnt.Maxp.NumGlyphs+1)

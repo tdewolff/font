@@ -210,42 +210,6 @@ func (r *BinaryReader) ReadInt16LE() int16 {
 	return int16(r.ReadUint16LE())
 }
 
-// BitmapReader is a binary bitmap reader.
-type BitmapReader struct {
-	buf []byte
-	pos uint32
-	eof bool
-}
-
-// NewBitmapReader returns a binary bitmap reader.
-func NewBitmapReader(buf []byte) *BitmapReader {
-	if math.MaxUint32 < uint(len(buf)) {
-		return &BitmapReader{nil, 0, true}
-	}
-	return &BitmapReader{buf, 0, false}
-}
-
-// Pos returns the current bit position.
-func (r *BitmapReader) Pos() uint32 {
-	return r.pos
-}
-
-// EOF returns if we reached the buffer's end-of-file.
-func (r *BitmapReader) EOF() bool {
-	return r.eof
-}
-
-// Read reads the next bit.
-func (r *BitmapReader) Read() bool {
-	if r.eof || uint32(len(r.buf)) <= (r.pos+1)/8 {
-		r.eof = true
-		return false
-	}
-	bit := r.buf[r.pos>>3]&(0x80>>(r.pos&7)) != 0
-	r.pos += 1
-	return bit
-}
-
 // BinaryWriter is a big endian binary file format writer.
 type BinaryWriter struct {
 	buf []byte
@@ -331,4 +295,77 @@ func (w *BinaryWriter) WriteInt32(v int32) {
 // WriteInt64 writes the given int64 to the buffer.
 func (w *BinaryWriter) WriteInt64(v int64) {
 	w.WriteUint64(uint64(v))
+}
+
+// BitmapReader is a binary bitmap reader.
+type BitmapReader struct {
+	buf []byte
+	pos uint32
+	eof bool
+}
+
+// NewBitmapReader returns a binary bitmap reader.
+func NewBitmapReader(buf []byte) *BitmapReader {
+	return &BitmapReader{buf, 0, false}
+}
+
+// Pos returns the current bit position.
+func (r *BitmapReader) Pos() uint32 {
+	return r.pos
+}
+
+// EOF returns if we reached the buffer's end-of-file.
+func (r *BitmapReader) EOF() bool {
+	return r.eof
+}
+
+// Read reads the next bit.
+func (r *BitmapReader) Read() bool {
+	if r.eof || uint32(len(r.buf)) <= (r.pos+1)/8 {
+		r.eof = true
+		return false
+	}
+	bit := r.buf[r.pos>>3]&(0x80>>(r.pos&7)) != 0
+	r.pos += 1
+	if 32 <= r.pos {
+		r.pos -= 32
+		r.buf = r.buf[4:]
+	}
+	return bit
+}
+
+// BitmapWriter is a binary bitmap writer.
+type BitmapWriter struct {
+	buf []byte
+	pos uint32
+}
+
+// NewBitmapWriter returns a binary bitmap writer.
+func NewBitmapWriter(buf []byte) *BitmapWriter {
+	return &BitmapWriter{buf, 0}
+}
+
+// Len returns the buffer's length in bytes.
+func (w *BitmapWriter) Len() uint32 {
+	return uint32(len(w.buf))
+}
+
+// Bytes returns the buffer's bytes.
+func (w *BitmapWriter) Bytes() []byte {
+	return w.buf
+}
+
+// Write writes the next bit.
+func (w *BitmapWriter) Write(bit bool) {
+	if uint32(len(w.buf)) <= (w.pos+1)/8 {
+		w.buf = append(w.buf, 0)
+	}
+	if bit {
+		w.buf[w.pos>>3] = w.buf[w.pos>>3] | (0x80 >> (w.pos & 7))
+	}
+	w.pos += 1
+	if 32 <= w.pos {
+		w.pos -= 32
+		w.buf = w.buf[4:]
+	}
 }

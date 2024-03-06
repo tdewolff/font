@@ -35,7 +35,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 		if glyphIDs[i] == 0 {
 			continue
 		}
-		deps, err := sfnt.Glyf.Dependencies(glyphIDs[i], 0)
+		deps, err := sfnt.Glyf.Dependencies(glyphIDs[i])
 		if err != nil {
 			panic(err)
 		}
@@ -121,6 +121,15 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 		table := sfntOld.Tables[tag]
 		switch tag {
 		case "cmap":
+			rs := make([]rune, 0, len(glyphIDs))
+			runeMap := make(map[rune]uint16, len(glyphIDs))
+			for subsetGlyphID, glyphID := range glyphIDs {
+				if r := sfntOld.Cmap.ToUnicode(glyphID); r != 0 {
+					rs = append(rs, r)
+					runeMap[r] = uint16(subsetGlyphID)
+				}
+			}
+
 			w := NewBinaryWriter([]byte{})
 			w.WriteUint16(0)  // version
 			w.WriteUint16(1)  // numTables
@@ -132,18 +141,9 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 			start := w.Len()
 			w.WriteUint16(12) // format
 			w.WriteUint16(0)  // reserved
-			w.WriteUint32(0)  // length (set later)
+			w.WriteUint32(16) // length (updated later)
 			w.WriteUint32(0)  // language
 			w.WriteUint32(0)  // numGroups (set later)
-
-			rs := make([]rune, 0, len(glyphIDs))
-			runeMap := make(map[rune]uint16, len(glyphIDs))
-			for subsetGlyphID, glyphID := range glyphIDs {
-				if r := sfntOld.Cmap.ToUnicode(glyphID); r != 0 {
-					rs = append(rs, r)
-					runeMap[r] = uint16(subsetGlyphID)
-				}
-			}
 
 			if 0 < len(rs) {
 				sort.Slice(rs, func(i, j int) bool { return rs[i] < rs[j] })
@@ -188,36 +188,120 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 					// empty .notdef
 					glyfOffsets[i+1] = w.Len()
 					continue
-				}
+				} else if sfntOld.Glyf.IsComposite(glyphID) {
+					// composite glyphs, update glyphIDs and make sure not to write to b
+					b := sfntOld.Glyf.Get(glyphID)
+					start := w.Len()
+					w.WriteBytes(b)
 
-				// update glyphIDs for composite glyphs, make sure not to write to b
-				b := sfntOld.Glyf.Get(glyphID)
-				glyphIDPositions, newGlyphIDs := []uint32{}, []uint16{}
-				if 0 < len(b) {
-					numberOfContours := int16(binary.BigEndian.Uint16(b))
-					if numberOfContours < 0 {
-						offset := uint32(10)
-						for {
-							flags := binary.BigEndian.Uint16(b[offset:])
-							subGlyphID := binary.BigEndian.Uint16(b[offset+2:])
-							glyphIDPositions = append(glyphIDPositions, offset+2)
-							newGlyphIDs = append(newGlyphIDs, glyphMap[subGlyphID])
+					offset := uint32(10)
+					for {
+						flags := binary.BigEndian.Uint16(b[offset:])
+						subGlyphID := binary.BigEndian.Uint16(b[offset+2:])
+						binary.BigEndian.PutUint16(w.buf[start+offset+2:], glyphMap[subGlyphID])
 
-							length, more := glyfCompositeLength(flags)
-							if !more {
-								break
-							}
-							offset += length
+						length, more := glyfCompositeLength(flags)
+						if !more {
+							break
 						}
+						offset += length
+					}
+				} else {
+					// simple glyph
+					contour, err := sfntOld.Glyf.Contour(glyphID)
+					if err != nil {
+						// bad glyf data or bug in Contour, write original glyph data
+						w.WriteBytes(sfntOld.Glyf.Get(glyphID))
+					} else if 0 < len(contour.EndPoints) { // not empty
+						// optimize glyph data
+						numberOfContours := int16(len(contour.EndPoints))
+						w.WriteInt16(numberOfContours)
+						w.WriteInt16(contour.XMin)
+						w.WriteInt16(contour.YMin)
+						w.WriteInt16(contour.XMax)
+						w.WriteInt16(contour.YMax)
+						for _, endPoint := range contour.EndPoints {
+							w.WriteUint16(endPoint)
+						}
+						w.WriteUint16(uint16(len(contour.Instructions)))
+						w.WriteBytes(contour.Instructions)
+
+						repeats := 0
+						xs := NewBinaryWriter([]byte{})
+						ys := NewBinaryWriter([]byte{})
+						numPoints := int(contour.EndPoints[numberOfContours-1]) + 1
+						for i := 0; i < numPoints; i++ {
+							dx := contour.XCoordinates[i]
+							dy := contour.YCoordinates[i]
+							if 0 < i {
+								dx -= contour.XCoordinates[i-1]
+								dy -= contour.YCoordinates[i-1]
+							}
+
+							var flag byte
+							if dx == 0 {
+								flag |= 0x10 // X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR
+							} else if -256 < dx && dx < 256 {
+								flag |= 0x02 // X_SHORT_VECTOR
+								if 0 < dx {
+									flag |= 0x10 // X_IS_SAME_OR_POSITIVE_X_SHORT_VECTOR
+									xs.WriteInt8(int8(dx))
+								} else {
+									xs.WriteInt8(int8(-dx))
+								}
+							} else {
+								xs.WriteInt16(dx)
+							}
+
+							if dy == 0 {
+								flag |= 0x20 // Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR
+							} else if -256 < dy && dy < 256 {
+								flag |= 0x04 // Y_SHORT_VECTOR
+								if 0 < dy {
+									flag |= 0x20 // Y_IS_SAME_OR_POSITIVE_Y_SHORT_VECTOR
+									ys.WriteByte(byte(dy))
+								} else {
+									ys.WriteByte(byte(-dy))
+								}
+							} else {
+								ys.WriteInt16(dy)
+							}
+
+							if contour.OnCurve[i] {
+								flag |= 0x01
+							}
+							if contour.OverlapSimple[i] {
+								flag |= 0x40
+							}
+
+							// handle flag repeats
+							if 0 < i && repeats < 255 && flag == w.buf[len(w.buf)-1] {
+								repeats++
+							} else {
+								if 1 < repeats {
+									w.buf[len(w.buf)-1] |= 0x08 // REPEAT_FLAG
+									w.WriteByte(byte(repeats))
+									repeats = 0
+								} else if repeats == 1 {
+									w.WriteByte(w.buf[len(w.buf)-1])
+									repeats = 0
+								}
+								w.WriteByte(flag)
+							}
+						}
+						if 1 < repeats {
+							w.buf[len(w.buf)-1] |= 0x08 // REPEAT_FLAG
+							w.WriteByte(byte(repeats))
+						} else if repeats == 1 {
+							w.WriteByte(w.buf[len(w.buf)-1])
+						}
+						w.WriteBytes(xs.Bytes())
+						w.WriteBytes(ys.Bytes())
 					}
 				}
-				start := w.Len()
-				w.WriteBytes(b)
-				for i := 0; i < len(glyphIDPositions); i++ {
-					binary.BigEndian.PutUint16(w.buf[start+glyphIDPositions[i]:], newGlyphIDs[i])
-				}
-				if len(b)%2 == 1 {
-					// padding to ensure glyph offsets are on even bytes for loca short format
+
+				// padding to ensure glyph offsets are on even bytes for loca short format
+				if w.Len()%2 == 1 {
 					w.WriteByte(0)
 				}
 				glyfOffsets[i+1] = w.Len()
@@ -344,7 +428,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 			}
 			sfnt.Tables[tag] = w.Bytes()
 
-			sfnt.Loca.format = indexToLocFormat
+			sfnt.Loca.Format = indexToLocFormat
 			sfnt.Loca.data = w.Bytes()
 		case "maxp":
 			w := NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["maxp"])))

@@ -326,11 +326,19 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	return buf, nil
 }
 
+func signInt16(flag byte, pos uint) int16 {
+	if flag&(1<<pos) != 0 {
+		return 1 // positive if bit on position is set
+	}
+	return -1
+}
+
 // Remarkable! This code was written on a Sunday evening, and after fixing the compiler errors it worked flawlessly!
 // Edit: oops, there was actually a subtle bug fixed in dx of flag < 120 of simple glyphs.
 func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error) {
 	r := NewBinaryReader(b)
-	_ = r.ReadUint32() // version
+	_ = r.ReadUint16() // version
+	optionFlags := r.ReadUint16()
 	numGlyphs := r.ReadUint16()
 	indexFormat := r.ReadUint16()
 	nContourStreamSize := r.ReadUint32()
@@ -344,15 +352,19 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 		return nil, nil, ErrInvalidFontData
 	}
 
-	bboxBitmapSize := ((uint32(numGlyphs) + 31) >> 5) << 2
+	bitmapSize := ((uint32(numGlyphs) + 31) >> 5) << 2
 	nContourStream := NewBinaryReader(r.ReadBytes(nContourStreamSize))
 	nPointsStream := NewBinaryReader(r.ReadBytes(nPointsStreamSize))
 	flagStream := NewBinaryReader(r.ReadBytes(flagStreamSize))
 	glyphStream := NewBinaryReader(r.ReadBytes(glyphStreamSize))
 	compositeStream := NewBinaryReader(r.ReadBytes(compositeStreamSize))
-	bboxBitmap := NewBitmapReader(r.ReadBytes(bboxBitmapSize))
-	bboxStream := NewBinaryReader(r.ReadBytes(bboxStreamSize - bboxBitmapSize))
+	bboxBitmap := NewBitmapReader(r.ReadBytes(bitmapSize))
+	bboxStream := NewBinaryReader(r.ReadBytes(bboxStreamSize - bitmapSize))
 	instructionStream := NewBinaryReader(r.ReadBytes(instructionStreamSize))
+	var overlapSimpleBitmap *BitmapReader
+	if optionFlags&0x0001 != 0 { // overlapSimpleBitmap present
+		overlapSimpleBitmap = NewBitmapReader(r.ReadBytes(bitmapSize))
+	}
 	if r.EOF() {
 		return nil, nil, ErrInvalidFontData
 	}
@@ -381,7 +393,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				return nil, nil, fmt.Errorf("glyf: empty glyph cannot have bbox definition")
 			}
 			continue
-		} else if nContours > 0 { // simple glyph
+		} else if 0 < nContours { // simple glyph
 			var xMin, yMin, xMax, yMax int16
 			if explicitBbox {
 				xMin = bboxStream.ReadInt16()
@@ -407,20 +419,13 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				return nil, nil, ErrInvalidFontData
 			}
 
-			signInt16 := func(flag byte, pos uint) int16 {
-				if flag&(1<<pos) != 0 {
-					return 1 // positive if bit on position is set
-				}
-				return -1
-			}
-
 			var x, y int16
 			outlineFlags := make([]byte, 0, nPoints)
 			xCoordinates := make([]int16, 0, nPoints)
 			yCoordinates := make([]int16, 0, nPoints)
 			for iPoint := uint16(0); iPoint < nPoints; iPoint++ {
 				flag := flagStream.ReadByte()
-				onCurve := (flag & 0x80) == 0 // unclear in spec, but it is opposite to non-transformed glyf table
+				onCurve := (flag & 0x80) == 0
 				flag &= 0x7f
 
 				// used for reference: https://github.com/fonttools/fonttools/blob/master/Lib/fontTools/ttLib/woff2.py
@@ -458,13 +463,17 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				xCoordinates = append(xCoordinates, dx)
 				yCoordinates = append(yCoordinates, dy)
 
-				// only the OnCurve bit is set, all others zero. That means x and y are two bytes long, this flag is not repeated,
-				// and all coordinates are in the coordinate array even if they are the same as the previous.
+				// keep bit 1-5 zero, that means x and y are two bytes long, this flag is not
+				// repeated, and all coordinates are in the coordinate array even if they are the
+				// same as the previous.
+				var outlineFlag byte
 				if onCurve {
-					outlineFlags = append(outlineFlags, 0x01)
-				} else {
-					outlineFlags = append(outlineFlags, 0x00)
+					outlineFlag |= 0x01 // ON_CURVE_POINT
 				}
+				if overlapSimpleBitmap != nil && overlapSimpleBitmap.Read() {
+					outlineFlag |= 0x40 // OVERLAP_SIMPLE
+				}
+				outlineFlags = append(outlineFlags, outlineFlag)
 
 				// calculate bbox
 				if !explicitBbox {
@@ -792,19 +801,18 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 	}
 	sort.Strings(tags)
 
-	tables := make([][]byte, len(tags))
-	for i, tag := range tags {
-		tables[i] = sfnt.Tables[tag]
-		if tag == "head" {
-			tables[i] = make([]byte, len(tables[i]))
-			copy(tables[i], sfnt.Tables[tag])
-			flags := binary.BigEndian.Uint16(tables[i][16:])
-			flags |= 0x0800 // set bit 11
-			binary.BigEndian.PutUint16(tables[i][16:], flags)
+	var glyf, hmtx []byte
+	_, hasGlyf := sfnt.Tables["glyf"]
+	_, hasLoca := sfnt.Tables["loca"]
+	_, hasHmtx := sfnt.Tables["hmtx"]
+	if hasGlyf && hasLoca {
+		var xMins []int16
+		glyf, xMins = transformGlyf(sfnt.NumGlyphs(), sfnt.Glyf, sfnt.Loca)
+		if glyf != nil && hasHmtx {
+			hmtx = transformHmtx(sfnt.Hmtx, xMins)
 		}
 	}
-
-	for i, tag := range tags {
+	for _, tag := range tags {
 		tagIndex := -1
 		for index, woff2Tag := range woff2TableTags {
 			if woff2Tag == tag {
@@ -814,23 +822,43 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 		}
 
 		transformVersion := 0
-		if tag == "glyf" || tag == "loca" {
+		if glyf == nil && (tag == "glyf" || tag == "loca") {
 			transformVersion = 3
+		} else if hmtx != nil && tag == "hmtx" {
+			transformVersion = 1
 		}
 		w.WriteUint8(byte(transformVersion)<<6 | byte(tagIndex)&0x3F) // flags
 		if tagIndex == -1 {
 			w.WriteString(tag) // tag
 		}
 		writeUintBase128(w, uint32(len(sfnt.Tables[tag])))
-		if (tag == "glyf" || tag == "loca") && transformVersion == 0 || tag == "hmtx" && transformVersion == 1 {
-			writeUintBase128(w, uint32(len(tables[i])))
+		if glyf != nil && tag == "glyf" {
+			writeUintBase128(w, uint32(len(glyf)))
+		} else if glyf != nil && tag == "loca" {
+			writeUintBase128(w, 0)
+		} else if hmtx != nil && tag == "hmtx" {
+			writeUintBase128(w, uint32(len(hmtx)))
 		}
 	}
 
 	headerLength := w.Len()
 	wBrotli := brotli.NewWriter(w)
-	for _, table := range tables {
-		// TODO: transform glyf, loca, and hmtx tables
+	for _, tag := range tags {
+		table := sfnt.Tables[tag]
+		if tag == "head" {
+			head := make([]byte, len(table))
+			copy(head, table)
+			flags := binary.BigEndian.Uint16(head[16:])
+			flags |= 0x0800 // set bit 11, font is compressed
+			binary.BigEndian.PutUint16(head[16:], flags)
+			table = head
+		} else if glyf != nil && tag == "glyf" {
+			table = glyf
+		} else if glyf != nil && tag == "loca" {
+			continue
+		} else if hmtx != nil && tag == "hmtx" {
+			table = hmtx
+		}
 		if _, err := wBrotli.Write(table); err != nil {
 			return nil, err
 		}
@@ -845,9 +873,274 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 	return b, nil
 }
 
+func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, []int16) {
+	bitmapSize := ((uint32(numGlyphs) + 31) >> 5) << 2
+	nContourStream := NewBinaryWriter([]byte{})
+	nPointsStream := NewBinaryWriter([]byte{})
+	flagStream := NewBinaryWriter([]byte{})
+	glyphStream := NewBinaryWriter([]byte{})
+	compositeStream := NewBinaryWriter([]byte{})
+	bboxBitmapStream := NewBitmapWriter(make([]byte, bitmapSize))
+	bboxStream := NewBinaryWriter([]byte{})
+	instructionStream := NewBinaryWriter([]byte{})
+	overlapSimpleStream := NewBitmapWriter(make([]byte, bitmapSize))
+
+	var optionFlags uint16
+	xMins := make([]int16, numGlyphs)
+	for glyphID := 0; glyphID < int(numGlyphs); glyphID++ {
+		// composite glyphs have already been reconstructed as simple glyphs
+		bboxEqual := false
+		var xMin, yMin, xMax, yMax int16
+		if !glyf.IsComposite(uint16(glyphID)) {
+			// simple glyph
+			contour, err := glyf.Contour(uint16(glyphID))
+			if err != nil {
+				return nil, nil
+			} else if len(contour.EndPoints) == 0 {
+				// empty glyph
+				nContourStream.WriteInt16(0)
+				bboxBitmapStream.Write(false)
+				continue
+			}
+			xMins[glyphID] = contour.XMin
+
+			// nContour and nPoints streams
+			nContourStream.WriteInt16(int16(len(contour.EndPoints)))
+			for i, endPoint := range contour.EndPoints {
+				if 0 < i {
+					endPoint -= contour.EndPoints[i-1]
+				} else {
+					endPoint++
+				}
+				write255Uint16(nPointsStream, endPoint)
+			}
+
+			// glyph, flag, and overlapSimple streams
+			for i := range contour.XCoordinates {
+				dx, dy := contour.XCoordinates[i], contour.YCoordinates[i]
+				if 0 < i {
+					dx -= contour.XCoordinates[i-1]
+					dy -= contour.YCoordinates[i-1]
+				}
+				dxSign, dySign := byte(1), byte(1)
+				if dx < 0 {
+					dxSign = 0
+					dx = -dx
+				}
+				if dy < 0 {
+					dySign = 0
+					dy = -dy
+				}
+
+				var flag byte
+				if dx == 0 && dy < 1280 {
+					// also dx==0 and dy==0
+					delta := dy >> 8
+					flag = byte(delta<<1) + dySign
+					glyphStream.WriteByte(byte(dy - (delta << 8)))
+				} else if dx < 1280 && dy == 0 {
+					delta := dx >> 8
+					flag = 10 + byte(delta<<1) + dxSign
+					glyphStream.WriteByte(byte(dx - (delta << 8)))
+				} else if dx < 65 && dy < 65 {
+					deltax := (dx - 1) >> 4
+					deltay := (dy - 1) >> 4
+					flag = 20 + byte(deltax<<4) + byte(deltay<<2) + (dySign << 1) + dxSign
+					glyphStream.WriteByte(byte(dx-1-(deltax<<4))<<4 | byte(dy-1-(deltay<<4)))
+				} else if dx < 769 && dy < 769 {
+					deltax := (dx - 1) >> 8
+					deltay := (dy - 1) >> 8
+					flag = 84 + byte(deltax<<2)*3 + byte(deltay<<2) + (dySign << 1) + dxSign
+					glyphStream.WriteByte(byte(dx - 1 - (deltax << 8)))
+					glyphStream.WriteByte(byte(dy - 1 - (deltay << 8)))
+				} else if dx < 4096 && dy < 4096 {
+					flag = 120 + (dySign << 1) + dxSign
+					glyphStream.WriteByte(byte(dx & 0x0FF0 >> 4))
+					glyphStream.WriteByte(byte(dx&0x000F)<<4 | byte(dy&0x0F00>>8))
+					glyphStream.WriteByte(byte(dy & 0x00FF))
+				} else {
+					flag = 124 + (dySign << 1) + dxSign
+					glyphStream.WriteInt16(dx)
+					glyphStream.WriteInt16(dy)
+				}
+				if dxSign == 0 {
+					dx = -dx
+				}
+				if dySign == 0 {
+					dy = -dy
+				}
+
+				if !contour.OnCurve[i] {
+					flag |= 0x80
+				}
+				flagStream.WriteByte(flag)
+				overlapSimpleStream.Write(contour.OverlapSimple[i])
+				if contour.OverlapSimple[i] {
+					optionFlags |= 0x01
+				}
+			}
+
+			// bbox streams
+			xMin, xMax = contour.XCoordinates[0], contour.XCoordinates[0]
+			yMin, yMax = contour.YCoordinates[0], contour.YCoordinates[0]
+			for _, x := range contour.XCoordinates[1:] {
+				if x < xMin {
+					xMin = x
+				}
+				if xMax < x {
+					xMax = x
+				}
+			}
+			if xMin == contour.XMin && xMax == contour.XMax {
+				for _, y := range contour.YCoordinates[1:] {
+					if y < yMin {
+						yMin = y
+					}
+					if yMax < y {
+						yMax = y
+					}
+				}
+				if yMin == contour.YMin && yMax == contour.YMax {
+					bboxEqual = true
+				} else {
+					xMin, xMax = contour.XMin, contour.XMax
+					yMin, yMax = contour.YMin, contour.YMax
+				}
+			}
+
+			// instruction stream
+			write255Uint16(glyphStream, uint16(len(contour.Instructions)))
+			instructionStream.WriteBytes(contour.Instructions)
+		} else {
+			// composite glyph
+			r := NewBinaryReader(glyf.Get(uint16(glyphID)))
+			_ = r.ReadInt16() // numberOfContours
+			xMin = r.ReadInt16()
+			yMin = r.ReadInt16()
+			xMax = r.ReadInt16()
+			yMax = r.ReadInt16()
+
+			hasInstructions := false
+			for {
+				flags := r.ReadUint16()
+				length, more := glyfCompositeLength(flags)
+				if flags&0x0100 != 0 {
+					hasInstructions = true
+				}
+
+				compositeStream.WriteUint16(flags)
+				compositeStream.WriteBytes(r.ReadBytes(length - 2))
+				if !more {
+					break
+				}
+			}
+			if hasInstructions {
+				instructionLength := r.ReadUint16()
+				write255Uint16(glyphStream, instructionLength)
+				glyphStream.WriteBytes(r.ReadBytes(uint32(instructionLength)))
+			}
+		}
+
+		bboxBitmapStream.Write(!bboxEqual)
+		if !bboxEqual {
+			bboxStream.WriteInt16(xMin)
+			bboxStream.WriteInt16(yMin)
+			bboxStream.WriteInt16(xMax)
+			bboxStream.WriteInt16(yMax)
+		}
+	}
+
+	n := uint32(36)
+	n += nContourStream.Len() + nPointsStream.Len()
+	n += flagStream.Len() + glyphStream.Len() + compositeStream.Len()
+	n += bboxBitmapStream.Len() + bboxStream.Len() + instructionStream.Len()
+	if optionFlags&0x01 != 0 {
+		n += instructionStream.Len()
+	}
+	w := NewBinaryWriter(make([]byte, 0, n))
+	w.WriteUint16(0) // reserved
+	w.WriteUint16(optionFlags)
+	w.WriteUint16(numGlyphs)
+	w.WriteUint16(uint16(loca.Format))
+	w.WriteUint32(nContourStream.Len())
+	w.WriteUint32(nPointsStream.Len())
+	w.WriteUint32(flagStream.Len())
+	w.WriteUint32(glyphStream.Len())
+	w.WriteUint32(compositeStream.Len())
+	w.WriteUint32(bboxBitmapStream.Len() + bboxStream.Len())
+	w.WriteUint32(instructionStream.Len())
+	w.WriteBytes(nContourStream.Bytes())
+	w.WriteBytes(nPointsStream.Bytes())
+	w.WriteBytes(flagStream.Bytes())
+	w.WriteBytes(glyphStream.Bytes())
+	w.WriteBytes(compositeStream.Bytes())
+	w.WriteBytes(bboxBitmapStream.Bytes())
+	w.WriteBytes(bboxStream.Bytes())
+	w.WriteBytes(instructionStream.Bytes())
+	if optionFlags&0x01 != 0 {
+		w.WriteBytes(overlapSimpleStream.Bytes())
+	}
+	return w.Bytes(), xMins
+}
+
+func transformHmtx(hmtx *hmtxTable, xMins []int16) []byte {
+	if len(xMins) != len(hmtx.HMetrics)+len(hmtx.LeftSideBearings) {
+		return nil
+	}
+
+	omitLSBs, omitLeftSideBearings := true, true
+	for i, hmetrics := range hmtx.HMetrics {
+		if hmetrics.LeftSideBearing != xMins[i] {
+			omitLSBs = false
+			break
+		}
+	}
+	for i, leftSideBearing := range hmtx.LeftSideBearings {
+		if leftSideBearing != xMins[+len(hmtx.HMetrics)+i] {
+			omitLeftSideBearings = false
+			break
+		}
+	}
+	if !omitLSBs && !omitLeftSideBearings {
+		return nil
+	}
+
+	var flags byte
+	n := 1 + len(hmtx.HMetrics)*2
+	if !omitLSBs {
+		n += len(hmtx.HMetrics) * 2
+	} else {
+		flags |= 0x01
+	}
+	if !omitLeftSideBearings {
+		n += len(hmtx.LeftSideBearings) * 2
+	} else {
+		flags |= 0x02
+	}
+
+	w := NewBinaryWriter(make([]byte, 0, n))
+	w.WriteUint8(flags)
+	for _, hmetrics := range hmtx.HMetrics {
+		w.WriteUint16(hmetrics.AdvanceWidth)
+	}
+	if !omitLSBs {
+		for _, hmetrics := range hmtx.HMetrics {
+			w.WriteInt16(hmetrics.LeftSideBearing)
+		}
+	}
+	if !omitLeftSideBearings {
+		for _, leftSideBearing := range hmtx.LeftSideBearings {
+			w.WriteInt16(leftSideBearing)
+		}
+	}
+	return w.Bytes()
+}
+
 func writeUintBase128(w *BinaryWriter, accum uint32) {
 	// see https://www.w3.org/TR/WOFF2/#DataTypes
-	fmt.Printf("uintbase128 %32b\n", accum)
+	if accum == 0 {
+		w.WriteByte(0)
+	}
 	written := false
 	for i := 4; 0 <= i; i-- {
 		mask := uint32(0x7F) << (i * 7)
@@ -856,9 +1149,24 @@ func writeUintBase128(w *BinaryWriter, accum uint32) {
 			if i != 0 {
 				v |= 0x80
 			}
-			fmt.Printf("    %8b\n", v)
 			w.WriteByte(byte(v))
 			written = true
 		}
+	}
+}
+
+func write255Uint16(w *BinaryWriter, val uint16) {
+	// see https://www.w3.org/TR/WOFF2/#DataTypes
+	if val < 253 {
+		w.WriteByte(byte(val))
+	} else if val < 256+253 {
+		w.WriteByte(255)
+		w.WriteByte(byte(val - 253))
+	} else if val < 256+253*2 {
+		w.WriteByte(254)
+		w.WriteByte(byte(val - 253*2))
+	} else {
+		w.WriteByte(253)
+		w.WriteUint16(val)
 	}
 }

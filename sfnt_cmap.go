@@ -47,7 +47,7 @@ func (subtable *cmapFormat4) Get(r rune) (uint16, bool) {
 	}
 	n := len(subtable.StartCode)
 	for i := 0; i < n; i++ {
-		if uint16(r) <= subtable.EndCode[i] && subtable.StartCode[i] <= uint16(r) {
+		if subtable.StartCode[i] <= uint16(r) && uint16(r) <= subtable.EndCode[i] {
 			if subtable.IdRangeOffset[i] == 0 {
 				// is modulo 65536 with the idDelta cast and addition overflow
 				return uint16(subtable.IdDelta[i]) + uint16(r), true
@@ -123,7 +123,7 @@ func (subtable *cmapFormat12) Get(r rune) (uint16, bool) {
 		return 0, false
 	}
 	for i := 0; i < len(subtable.StartCharCode); i++ {
-		if uint32(r) <= subtable.EndCharCode[i] && subtable.StartCharCode[i] <= uint32(r) {
+		if subtable.StartCharCode[i] <= uint32(r) && uint32(r) <= subtable.EndCharCode[i] {
 			return uint16((uint32(r) - subtable.StartCharCode[i]) + subtable.StartGlyphID[i]), true
 		}
 	}
@@ -211,7 +211,7 @@ func (sfnt *SFNT) parseCmap() error {
 		subtableID := -1
 
 		offset := r.ReadUint32()
-		if uint32(len(b))-8 < offset { // subtable must be at least 8 bytes long to extract length
+		if uint32(len(b))-8 < offset { // to extract the subtable format and length
 			return fmt.Errorf("cmap: bad subtable %d", j)
 		}
 		for i := 0; i < len(offsets); i++ {

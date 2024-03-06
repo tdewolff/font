@@ -60,6 +60,8 @@ github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcU
 github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXlSw2iwfAo=
 github.com/tdewolff/argp v0.0.0-20240303230445-a8dec846536d h1:pzTSmw3ARDn5Y50diBNcixBRt6BqZeWXfqOuiJys/f0=
 github.com/tdewolff/argp v0.0.0-20240303230445-a8dec846536d/go.mod h1:e1dkYfBKpwfFhwXWrQpEU2ClFgxYOT4SrHd6fKD7nIE=
+github.com/tdewolff/argp v0.0.0-20240305172042-155215ad3ad2 h1:MRF1vsakYnwzGDxaO/POPsvTj0QRYLyeHv3OkiCLlS4=
+github.com/tdewolff/argp v0.0.0-20240305172042-155215ad3ad2/go.mod h1:e1dkYfBKpwfFhwXWrQpEU2ClFgxYOT4SrHd6fKD7nIE=
 github.com/tdewolff/canvas v0.0.0-20240301225202-94b55b0c5a78 h1:5AwJ3q5oWM/hrO0jtlCyEi/C5LXrvkxJ1QEjS3OOehU=
 github.com/tdewolff/canvas v0.0.0-20240301225202-94b55b0c5a78/go.mod h1:hGxWCl1a3KdYh6pxYy9sa9jLAlmKLMeuCSCjjy39iVE=
 github.com/tdewolff/minify/v2 v2.20.5 h1:IbJpmpAFESnuJPdsvFBJWsDcXE5qHsmaVQrRqhOI9sI=

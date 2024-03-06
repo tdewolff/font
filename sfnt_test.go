@@ -24,7 +24,7 @@ func TestSFNTDejaVuSerifTTF(t *testing.T) {
 	test.T(t, sfnt.Head.YMax, int16(2272))
 
 	id := sfnt.GlyphIndex(' ')
-	contour, err := sfnt.Glyf.Contour(id, 0)
+	contour, err := sfnt.Glyf.Contour(id)
 	test.Error(t, err)
 	test.T(t, contour.GlyphID, id)
 	test.T(t, len(contour.XCoordinates), 0)
