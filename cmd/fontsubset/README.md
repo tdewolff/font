@@ -38,6 +38,7 @@ Options:
 
 Arguments:
   input     Input font file.
+```
 
 
 ## Example
