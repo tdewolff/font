@@ -23,7 +23,7 @@ import (
 
 type Show struct {
 	Index   int     `short:"i" desc:"Font index for font collections"`
-	GlyphID uint16  `short:"g" desc:"Glyph ID"`
+	GlyphID uint16  `short:"g" name:"glyph" desc:"Glyph ID"`
 	Char    string  `short:"c" desc:"Unicode character"`
 	Width   int     `desc:"Image width"`
 	PPEM    uint16  `default:"40" desc:"Pixels per em-square"`
@@ -36,7 +36,7 @@ type Show struct {
 type Info struct {
 	Index   int    `short:"i" desc:"Font index for font collections"`
 	Table   string `short:"t" desc:"OpenType table name"`
-	GlyphID uint16 `short:"g" desc:"Glyph ID"`
+	GlyphID uint16 `short:"g" name:"glyph" desc:"Glyph ID"`
 	Char    string `short:"c" desc:"Unicode character"`
 	Output  string `short:"o" desc:"Output filename"`
 	Input   string `index:"0" desc:"Input file"`
@@ -203,29 +203,27 @@ func (cmd *Info) Run() error {
 	b, err := ioutil.ReadFile(cmd.Input)
 	if err != nil {
 		return err
-	}
-
-	sfnt, err := font.ParseSFNT(b, cmd.Index)
-	if err != nil {
+	} else if b, err = font.ToSFNT(b); err != nil {
 		return err
 	}
 
-	fmt.Printf("File: %s\n\n", cmd.Input)
-	version := "TrueType"
-	if sfnt.Version == "OTTO" {
-		version = "CFF"
-	} else if sfnt.Version == "ttcf" {
-		version = "Collection"
-	}
-	fmt.Printf("sfntVersion: 0x%08X (%s)\n", sfnt.Version, version)
-
-	nLen := int(math.Log10(float64(len(sfnt.Data))) + 1)
-
-	fmt.Printf("\nTable directory:\n")
-	r := font.NewBinaryReader(sfnt.Data)
-	_ = r.ReadBytes(4)
+	r := font.NewBinaryReader(b)
+	sfntVersion := r.ReadString(4)
+	_ = r.ReadUint32() // majorVersion and minorVersion
 	numTables := int(r.ReadUint16())
 	_ = r.ReadBytes(6)
+
+	version := "TrueType"
+	if sfntVersion == "OTTO" {
+		version = "CFF"
+	} else if sfntVersion == "ttcf" {
+		version = "Collection"
+	}
+	fmt.Printf("File: %s\n\n", cmd.Input)
+	fmt.Printf("sfntVersion: 0x%08X (%s)\n", sfntVersion, version)
+	fmt.Printf("\nTable directory:\n")
+
+	nLen := int(math.Log10(float64(len(b))) + 1)
 	for i := 0; i < numTables; i++ {
 		tag := r.ReadString(4)
 		checksum := r.ReadUint32()

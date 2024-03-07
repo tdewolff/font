@@ -1,5 +1,8 @@
 # Font [![API reference](https://img.shields.io/badge/godoc-reference-5272B4)](https://pkg.go.dev/github.com/tdewolff/font?tab=doc)
 
+**[fontsubset](https://github.com/tdewolff/font/tree/master/cmd/fontsubset)**: select a subset of glyphs from a font.
+**[fontinfo](https://github.com/tdewolff/font/tree/master/cmd/fontinfo)**: show font information and display glyphs in the command line or as a raster image.
+
 This library contains font parsers for WOFF, WOFF2, and EOT. It takes a byte-slice as input and converts it to SFNT formats (either TTF or OTF). As font formats for the web, WOFF, WOFF2, and EOT are really just containers for SFNT fonts (such as TTF and OTF) that have better compression.
 
 The WOFF and WOFF2 converters have been testing using the validation tests from the W3C.
