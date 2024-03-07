@@ -20,6 +20,16 @@ import (
 	"github.com/tdewolff/prompt"
 )
 
+var extMimetype = map[string]string{
+	".ttf":   "font/truetype",
+	".ttc":   "font/truetype",
+	".otf":   "font/opentype",
+	".otc":   "font/opentype",
+	".woff":  "font/woff",
+	".woff2": "font/woff2",
+	".eot":   "font/eot",
+}
+
 type CSSOptions struct {
 	Output   string `desc:"CSS output file name."`
 	Append   bool   `desc:"Append to the output file instead of overwriting."`
@@ -40,6 +50,7 @@ func run() int {
 	unicodeRanges := []string{}
 	index := 0
 	css := CSSOptions{}
+	var typ string
 	var encoding string
 	var input, output string
 	var quiet bool
@@ -54,6 +65,7 @@ func run() int {
 	cmd.AddOpt(argp.Append{&unicodes}, "u", "unicode", "List of unicode IDs to keep, eg. f0fc-f0ff.")
 	cmd.AddOpt(argp.Append{&unicodeRanges}, "r", "range", "List of unicode categories or scripts to keep, eg. L (for Letters) or Latin (latin script). See https://pkg.go.dev/unicode for all supported values.")
 	cmd.AddOpt(&index, "", "index", "Index into font collection (used with TTC or OTC).")
+	cmd.AddOpt(&typ, "t", "type", "Explicitly set output mimetype, eg. font/woff2.")
 	cmd.AddOpt(&encoding, "e", "encoding", "Output encoding, either empty of base64.")
 	cmd.AddOpt(&css, "", "css", "")
 	cmd.AddOpt(&output, "o", "output", "Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported).")
@@ -96,7 +108,6 @@ func run() int {
 	}
 
 	rLen := len(b)
-	origExt := font.Extension(b)
 	if b, err = font.ToSFNT(b); err != nil {
 		Error.Println(err)
 		return 1
@@ -291,32 +302,32 @@ func run() int {
 	sfnt = sfnt.Subset(glyphIDs, font.SubsetOptions{Tables: font.KeepMinTables})
 
 	// create font program
-	ext := filepath.Ext(output)
-TryExtension:
-	switch ext {
-	case ".ttf", ".ttc":
+	mimetype := extMimetype[filepath.Ext(output)]
+	if typ != "" {
+		mimetype = typ
+	} else if mimetype == "" {
+		mimetype, _ = font.MediaType(b)
+	}
+	switch mimetype {
+	case "font/truetype":
 		if sfnt.IsCFF {
 			Error.Println("cannot convert CFF to TrueType glyph outlines")
 			return 1
 		}
 		b = sfnt.Write()
-	case ".otf", ".otc":
+	case "font/opentype":
 		if sfnt.IsTrueType {
 			Error.Println("cannot convert TrueType to CFF glyph outlines")
 			return 1
 		}
 		b = sfnt.Write()
-	case ".woff2":
+	case "font/woff2":
 		if b, err = sfnt.WriteWOFF2(); err != nil {
 			Error.Println(err)
 			return 1
 		}
 	default:
-		if ext != origExt {
-			ext = origExt
-			goto TryExtension
-		}
-		Error.Println("unsupported output file extension:", ext)
+		Error.Println("unsupported output file type:", mimetype)
 		return 1
 	}
 	wLen := len(b)
@@ -386,7 +397,7 @@ TryExtension:
 		// write css classes
 		b := bufio.NewWriter(w)
 		for i, r := range glyphRunes {
-			fmt.Fprintf(b, ".%s%s:before{content:\"\\%x\"", css.Prefix, glyphNames[i], r)
+			fmt.Fprintf(b, ".%s%s:before{content:\"\\%x\"}\n", css.Prefix, glyphNames[i], r)
 		}
 		if err := b.Flush(); err != nil {
 			w.Close()
