@@ -85,7 +85,7 @@ func (sfnt *SFNT) GlyphIndex(r rune) uint16 {
 	return sfnt.Cmap.Get(r)
 }
 
-// GlyphName returns the name of the glyph.
+// GlyphName returns the name of the glyph. It returns an empty string when no name exists.
 func (sfnt *SFNT) GlyphName(glyphID uint16) string {
 	return sfnt.Post.Get(glyphID)
 }
@@ -424,7 +424,7 @@ func (sfnt *SFNT) Write() []byte {
 
 		padding := (4 - lengths[i]&3) & 3
 		for i := 0; i < int(padding); i++ {
-			w.WriteByte(0x00)
+			w.WriteByte(0)
 		}
 	}
 

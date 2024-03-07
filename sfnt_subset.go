@@ -103,6 +103,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 	sfntOld := sfnt
 	sfnt = &SFNT{
 		Version:    sfntOld.Version,
+		Length:     12, // increased below
 		IsCFF:      sfntOld.IsCFF,
 		IsTrueType: sfntOld.IsTrueType,
 		Tables:     map[string][]byte{},
@@ -467,6 +468,9 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 		default:
 			sfnt.Tables[tag] = table
 		}
+
+		sfnt.Length += uint32(16 + len(sfnt.Tables[tag]))        // 16 for the table record
+		sfnt.Length += (4 - uint32(len(sfnt.Tables[tag]))&3) & 3 // padding
 	}
 	return sfnt
 }

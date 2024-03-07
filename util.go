@@ -327,10 +327,6 @@ func (r *BitmapReader) Read() bool {
 	}
 	bit := r.buf[r.pos>>3]&(0x80>>(r.pos&7)) != 0
 	r.pos += 1
-	if 32 <= r.pos {
-		r.pos -= 32
-		r.buf = r.buf[4:]
-	}
 	return bit
 }
 
@@ -364,8 +360,4 @@ func (w *BitmapWriter) Write(bit bool) {
 		w.buf[w.pos>>3] = w.buf[w.pos>>3] | (0x80 >> (w.pos & 7))
 	}
 	w.pos += 1
-	if 32 <= w.pos {
-		w.pos -= 32
-		w.buf = w.buf[4:]
-	}
 }

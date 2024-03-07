@@ -201,7 +201,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 			var err error
 			tables[iGlyf].data, tables[iLoca].data, err = reconstructGlyfLoca(tables[iGlyf].data, tables[iLoca].origLength)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("glyf: %v", err)
 			}
 			if tables[iLoca].origLength != uint32(len(tables[iLoca].data)) {
 				return nil, fmt.Errorf("loca: invalid value for origLength")
@@ -787,18 +787,22 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 	w.WriteUint16(0)                                     // reserved
 	w.WriteUint32(sfnt.Length)                           // totalSfntSize
 	w.WriteUint32(0)                                     // totalCompressedSize (set later)
-	w.WriteUint16(2)                                     // majorVersion
+	w.WriteUint16(1)                                     // majorVersion
 	w.WriteUint16(0)                                     // minorVersion
-	w.WriteUint32(48)                                    // metaOffset
+	w.WriteUint32(0)                                     // metaOffset
 	w.WriteUint32(0)                                     // metaLength
 	w.WriteUint32(0)                                     // metaOrigLength
-	w.WriteUint32(48)                                    // privOffset
+	w.WriteUint32(0)                                     // privOffset
 	w.WriteUint32(0)                                     // privLength
 
 	tags := make([]string, 0, len(sfnt.Tables))
 	for tag, _ := range sfnt.Tables {
+		if tag == "DSIG" {
+			continue // exclude DSIG table
+		}
 		tags = append(tags, tag)
 	}
+	// TODO: (WOFF2) loca must follow glyf for TTC
 	sort.Strings(tags)
 
 	var glyf, hmtx []byte
@@ -841,6 +845,12 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 		}
 	}
 
+	if sfnt.Version == "ttcf" {
+		// TODO: (WOFF2) support TTC
+		w.WriteUint32(0)     // version
+		write255Uint16(w, 0) // numFonts
+	}
+
 	headerLength := w.Len()
 	wBrotli := brotli.NewWriter(w)
 	for _, tag := range tags {
@@ -867,9 +877,16 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 		return nil, err
 	}
 
+	// pad to 4-byte boundary
+	// apparently not in the specification, but required by at least Firefox
+	padding := (4 - w.Len()&3) & 3
+	for i := 0; i < int(padding); i++ {
+		w.WriteByte(0)
+	}
+
 	b := w.Bytes()
-	binary.BigEndian.PutUint32(b[8:], uint32(len(b)))
-	binary.BigEndian.PutUint32(b[20:], uint32(len(b))-headerLength)
+	binary.BigEndian.PutUint32(b[8:], uint32(len(b)))               // length
+	binary.BigEndian.PutUint32(b[20:], uint32(len(b))-headerLength) // totalCompressedSize
 	return b, nil
 }
 
@@ -890,6 +907,7 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 	for glyphID := 0; glyphID < int(numGlyphs); glyphID++ {
 		// composite glyphs have already been reconstructed as simple glyphs
 		bboxEqual := false
+		hasOverlap := false
 		var xMin, yMin, xMax, yMax int16
 		if !glyf.IsComposite(uint16(glyphID)) {
 			// simple glyph
@@ -974,8 +992,8 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 					flag |= 0x80
 				}
 				flagStream.WriteByte(flag)
-				overlapSimpleStream.Write(contour.OverlapSimple[i])
 				if contour.OverlapSimple[i] {
+					hasOverlap = true
 					optionFlags |= 0x01
 				}
 			}
@@ -1048,6 +1066,8 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 			bboxStream.WriteInt16(xMax)
 			bboxStream.WriteInt16(yMax)
 		}
+
+		overlapSimpleStream.Write(hasOverlap)
 	}
 
 	n := uint32(36)
@@ -1055,7 +1075,7 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 	n += flagStream.Len() + glyphStream.Len() + compositeStream.Len()
 	n += bboxBitmapStream.Len() + bboxStream.Len() + instructionStream.Len()
 	if optionFlags&0x01 != 0 {
-		n += instructionStream.Len()
+		n += overlapSimpleStream.Len()
 	}
 	w := NewBinaryWriter(make([]byte, 0, n))
 	w.WriteUint16(0) // reserved

@@ -163,6 +163,7 @@ type cmapTable struct {
 	Subtables       []cmapSubtable
 }
 
+// Get returns the glyph ID for the corresponding rune. It looks for each subtable in the order in which they appear and returns the first match, or 0 when no match is found.
 func (cmap *cmapTable) Get(r rune) uint16 {
 	for _, subtable := range cmap.Subtables {
 		if glyphID, ok := subtable.Get(r); ok {
@@ -172,6 +173,7 @@ func (cmap *cmapTable) Get(r rune) uint16 {
 	return 0
 }
 
+// ToUnicode returns the rune for the corresponding glyph ID. It looks for each subtable in the order in which they appear and returns the first match, or 0 when no match is found.
 func (cmap *cmapTable) ToUnicode(glyphID uint16) rune {
 	for _, subtable := range cmap.Subtables {
 		if r, ok := subtable.ToUnicode(glyphID); ok {
