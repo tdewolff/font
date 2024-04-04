@@ -209,7 +209,9 @@ func (cmd *Info) Run() error {
 
 	r := font.NewBinaryReader(b)
 	sfntVersion := r.ReadString(4)
-	_ = r.ReadUint32() // majorVersion and minorVersion
+	if sfntVersion == "ttcf" {
+		_ = r.ReadUint32() // majorVersion and minorVersion
+	}
 	numTables := int(r.ReadUint16())
 	_ = r.ReadBytes(6)
 
