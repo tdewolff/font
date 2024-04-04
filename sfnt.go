@@ -246,7 +246,7 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 	tables := make(map[string][]byte, numTables)
 	for i := 0; i < int(numTables); i++ {
 		tag := r.ReadString(4)
-		_ = r.ReadUint32() // checksum
+		checksum := r.ReadUint32()
 		offset := r.ReadUint32()
 		length := r.ReadUint32()
 
@@ -261,18 +261,19 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 			}
 
 			// to check checksum for head table, replace the overal checksum with zero and reset it at the end
-			//checksumAdjustment := binary.BigEndian.Uint32(b[offset+8:])
-			//binary.BigEndian.PutUint32(b[offset+8:], 0x00000000)
-			//if calcChecksum(b[offset:offset+length+padding]) != checksum {
-			//	return nil, fmt.Errorf("%s: bad checksum", tag)
-			//}
-			//binary.BigEndian.PutUint32(b[offset+8:], checksumAdjustment)
-			//} else if calcChecksum(b[offset:offset+length+padding]) != checksum {
-			//	return nil, fmt.Errorf("%s: bad checksum", tag)
+			checksumAdjustment := binary.BigEndian.Uint32(b[offset+8:])
+			binary.BigEndian.PutUint32(b[offset+8:], 0x00000000)
+			if calcChecksum(b[offset:offset+length+padding]) != checksum {
+				return nil, fmt.Errorf("%s: bad checksum", tag)
+			} else if 0xB1B0AFBA-calcChecksum(b) != checksumAdjustment {
+				return nil, fmt.Errorf("bad checksum")
+			}
+			binary.BigEndian.PutUint32(b[offset+8:], checksumAdjustment)
+		} else if calcChecksum(b[offset:offset+length+padding]) != checksum {
+			return nil, fmt.Errorf("%s: bad checksum", tag)
 		}
 		tables[tag] = b[offset : offset+length : offset+length]
 	}
-	// TODO: check file checksum
 
 	sfnt := &SFNT{}
 	sfnt.Length = uint32(len(b))
@@ -414,7 +415,9 @@ func (sfnt *SFNT) Write() []byte {
 		table := sfnt.Tables[tag]
 		if tag == "head" {
 			checksumAdjustmentPos = w.Len() + 8
-			w.WriteBytes(table[:28])
+			w.WriteBytes(table[:8])
+			w.WriteUint32(0)
+			w.WriteBytes(table[12:28])
 			w.WriteInt64(int64(time.Now().UTC().Sub(time.Date(1904, 1, 1, 0, 0, 0, 0, time.UTC)) / 1e9)) // modified
 			w.WriteBytes(table[36:])
 		} else {
