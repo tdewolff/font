@@ -274,7 +274,7 @@ func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, h
 		return fmt.Errorf("%v: %w", table, err)
 	}
 
-	// x,y are raise to most-significant 16 bits and treat less-significant bits as fraction
+	// x,y are raised to most-significant 16 bits and treat less-significant bits as fraction
 	var x, y int32
 	f /= float64(1 << 16) // correct back
 
@@ -809,23 +809,21 @@ func (cff *cffTable) updateSubrs(index *cffINDEX, localSubrsMap, globalSubrsMap 
 				wNum.WriteUint16(uint16(j))
 			} else {
 				wNum.WriteUint8(255)
-				wNum.WriteUint32(uint32(j))
+				wNum.WriteUint32(uint32(j << 16)) // is Fixed with 16-bit fraction
 			}
 
 			// update INDEX
 			shrink := lenNumber - wNum.Len()
 			if 0 < shrink {
-				fmt.Println("index shrink")
+				// update offsets
+				end := posNumber + lenNumber - shrink
+				for k < len(index.offset) && index.offset[k] < end {
+					index.offset[k] -= shrunk
+					k++
+				}
+				// move chunk forward
 				if 0 < shrunk {
-					// move chunk forward
-					end := posNumber + lenNumber - shrink
 					copy(index.data[offset-shrunk:], index.data[offset:end])
-
-					// update offsets
-					for k < len(index.offset) && index.offset[k] < end {
-						index.offset[k] -= shrunk
-						k++
-					}
 				}
 				shrunk += shrink
 				offset = posNumber + lenNumber
@@ -836,15 +834,15 @@ func (cff *cffTable) updateSubrs(index *cffINDEX, localSubrsMap, globalSubrsMap 
 	}
 
 	if 0 < shrunk {
-		// move chunk forward
-		copy(index.data[offset-shrunk:], index.data[offset:])
-		index.data = index.data[:uint32(len(index.data))-shrunk]
-
 		// update offsets
 		for k < len(index.offset) {
 			index.offset[k] -= shrunk
 			k++
 		}
+
+		// move chunk forward
+		copy(index.data[offset-shrunk:], index.data[offset:])
+		index.data = index.data[:uint32(len(index.data))-shrunk]
 	}
 }
 
