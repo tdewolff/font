@@ -2,6 +2,7 @@ package font
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"sort"
 )
@@ -19,8 +20,10 @@ type SubsetOptions struct {
 // Subset trims an SFNT font to contain only the passed glyphIDs, thereby resulting in a significant size reduction. The glyphIDs will apear in the specified order in the file and their dependencies are added to the end.
 func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 	if sfnt.IsCFF {
-		// TODO: support subsetting CFF
-		return sfnt
+		if _, ok := sfnt.Tables["CFF2"]; ok {
+			// TODO: support subsetting CFF2
+			return sfnt
+		}
 	}
 
 	// set up glyph mapping from original to subset
@@ -29,21 +32,23 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 		glyphMap[glyphID] = uint16(subsetGlyphID)
 	}
 
-	// add dependencies for composite glyphs add the end
-	origLen := len(glyphIDs)
-	for i := 0; i < origLen; i++ {
-		if glyphIDs[i] == 0 {
-			continue
-		}
-		deps, err := sfnt.Glyf.Dependencies(glyphIDs[i])
-		if err != nil {
-			panic(err)
-		}
-		for _, glyphID := range deps[1:] {
-			if _, ok := glyphMap[glyphID]; !ok {
-				subsetGlyphID := uint16(len(glyphIDs))
-				glyphIDs = append(glyphIDs, glyphID)
-				glyphMap[glyphID] = subsetGlyphID
+	if sfnt.IsTrueType {
+		// add dependencies for composite glyphs add the end
+		origLen := len(glyphIDs)
+		for i := 0; i < origLen; i++ {
+			if glyphIDs[i] == 0 {
+				continue
+			}
+			deps, err := sfnt.Glyf.Dependencies(glyphIDs[i])
+			if err != nil {
+				panic(err)
+			}
+			for _, glyphID := range deps[1:] {
+				if _, ok := glyphMap[glyphID]; !ok {
+					subsetGlyphID := uint16(len(glyphIDs))
+					glyphIDs = append(glyphIDs, glyphID)
+					glyphMap[glyphID] = subsetGlyphID
+				}
 			}
 		}
 	}
@@ -51,7 +56,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 	// specify tables to include
 	var tags []string
 	if len(options.Tables) == 1 && options.Tables[0] == "min" {
-		tags = []string{"cmap", "head", "hhea", "hmtx", "maxp", "name", "OS/2", "post"}
+		tags = []string{"DSIG", "cmap", "head", "hhea", "hmtx", "maxp", "name", "OS/2", "post"}
 		if sfnt.IsTrueType {
 			tags = append(tags, "glyf", "loca")
 		} else if sfnt.IsCFF {
@@ -63,17 +68,20 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 		}
 	} else if len(options.Tables) == 1 && options.Tables[0] == "pdf" {
 		if sfnt.IsTrueType {
-			tags = append(tags, "glyf", "head", "hhea", "hmtx", "loca", "maxp")
+			tags = append(tags, "DSIG", "glyf", "head", "hhea", "hmtx", "loca", "maxp")
 			for _, tag := range []string{"cvt ", "fpgm", "prep"} {
 				if _, ok := sfnt.Tables[tag]; ok {
 					tags = append(tags, tag)
 				}
 			}
 		} else if sfnt.IsCFF {
+			// head and maxp tables are needed for almost all viewers
+			// hhea and hmtx tables are needed for Evince (and possibly other viewers)
+			// DSIG is recommended by Microsoft's FontValidator
 			if _, ok := sfnt.Tables["CFF2"]; ok {
-				tags = append(tags, "CFF2", "cmap") // not strictly allowed
+				tags = append(tags, "DSIG", "cmap", "CFF2", "head", "hhea", "hmtx", "maxp") // not strictly allowed
 			} else {
-				tags = append(tags, "CFF ", "cmap")
+				tags = append(tags, "DSIG", "cmap", "CFF ", "head", "hhea", "hmtx", "maxp")
 			}
 		}
 	} else if len(options.Tables) == 1 && options.Tables[0] == "all" {
@@ -88,6 +96,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 	// preliminary calculations
 	indexToLocFormat := int16(1)                   // for head and loca
 	glyfOffsets := make([]uint32, len(glyphIDs)+1) // for loca
+	ulUnicodeRange := [4]uint32{0, 0, 0, 0}        // for OS/2
 	numberOfHMetrics := uint16(len(glyphIDs))      // for hhea and hmtx
 	if 1 < numberOfHMetrics {
 		advance := sfnt.Hmtx.Advance(glyphIDs[numberOfHMetrics-1])
@@ -119,11 +128,15 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 		}
 	}
 	for _, tag := range tags {
-		table := sfntOld.Tables[tag]
+		table, ok := sfntOld.Tables[tag]
+		if !ok {
+			continue
+		}
+
 		switch tag {
 		case "cmap":
 			rs := make([]rune, 0, len(glyphIDs))
-			runeMap := make(map[rune]uint16, len(glyphIDs))
+			runeMap := make(map[rune]uint16, len(glyphIDs)) // for OS/2
 			for subsetGlyphID, glyphID := range glyphIDs {
 				if r := sfntOld.Cmap.ToUnicode(glyphID); r != 0 {
 					rs = append(rs, r)
@@ -176,12 +189,36 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 
 				binary.BigEndian.PutUint32(w.buf[start+4:], w.Len()-start) // set length
 				binary.BigEndian.PutUint32(w.buf[start+12:], numGroups)    // set numGroups
+				ulUnicodeRange = os2UlUnicodeRange(rs)
 			}
 			sfnt.Tables[tag] = w.Bytes()
 
 			if err := sfnt.parseCmap(); err != nil {
 				panic("invalid cmap table: " + err.Error())
 			}
+		case "CFF ":
+			cff := *sfntOld.CFF
+			cff.charStrings = &cffINDEX{}
+			for _, glyphID := range glyphIDs {
+				charString := sfntOld.CFF.charStrings.Get(glyphID)
+				if charString == nil {
+					panic(fmt.Sprintf("bad glyphID: %v", glyphID))
+				}
+				cff.charStrings.Add(charString) // copies data
+			}
+
+			// trim globalSubrs and localSubrs INDEX
+			if err := cff.rearrangeSubrs(); err != nil {
+				panic("CFF table: " + err.Error())
+			}
+
+			b, err := cff.Write()
+			if err != nil {
+				panic("invalid CFF table: " + err.Error())
+			}
+			sfnt.Tables[tag] = b
+
+			sfnt.CFF = &cff
 		case "glyf":
 			w := NewBinaryWriter([]byte{})
 			for i, glyphID := range glyphIDs {
@@ -446,9 +483,20 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 
 			sfnt.Name = &nameTable{}
 		case "OS/2":
-			sfnt.Tables[tag] = table
-
 			sfnt.OS2 = sfntOld.OS2
+			sfnt.OS2.UlUnicodeRange1 = ulUnicodeRange[0]
+			sfnt.OS2.UlUnicodeRange2 = ulUnicodeRange[1]
+			sfnt.OS2.UlUnicodeRange3 = ulUnicodeRange[2]
+			sfnt.OS2.UlUnicodeRange4 = ulUnicodeRange[3]
+
+			w := NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["OS/2"])))
+			w.WriteBytes(table[:42])
+			w.WriteUint32(sfnt.OS2.UlUnicodeRange1)
+			w.WriteUint32(sfnt.OS2.UlUnicodeRange2)
+			w.WriteUint32(sfnt.OS2.UlUnicodeRange3)
+			w.WriteUint32(sfnt.OS2.UlUnicodeRange4)
+			w.WriteBytes(table[58:])
+			sfnt.Tables[tag] = w.Bytes()
 		case "post":
 			w := NewBinaryWriter(make([]byte, 0, 32))
 			w.WriteUint32(0x00030000) // version
@@ -473,4 +521,347 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 		sfnt.Length += (4 - uint32(len(sfnt.Tables[tag]))&3) & 3 // padding
 	}
 	return sfnt
+}
+
+func os2UlUnicodeRange(rs []rune) [4]uint32 {
+	v := [4]uint32{0, 0, 0, 0}
+	for _, r := range rs {
+		if bit := os2UlUnicodeRangeBit(r); bit != -1 {
+			i := int(bit / 32)
+			v[3-i] |= 2 << (bit - i*32)
+		}
+		if 0x10000 <= r && r < 0x110000 {
+			v[2] |= 2 << 25 // bit 57 (Non-Plane 0)
+		}
+	}
+	return v
+}
+
+func os2UlUnicodeRangeBit(r rune) int {
+	if r < 0x80 {
+		return 0
+	} else if r < 0x0100 {
+		return 1
+	} else if r < 0x0180 {
+		return 2
+	} else if r < 0x0250 {
+		return 3
+	} else if r < 0x02B0 {
+		return 4
+	} else if r < 0x0300 {
+		return 5
+	} else if r < 0x0370 {
+		return 6
+	} else if r < 0x0400 {
+		return 7
+	} else if r < 0x0500 {
+		return 9
+	} else if r < 0x0530 {
+		return -1
+	} else if r < 0x0590 {
+		return 10
+	} else if r < 0x0600 {
+		return 11
+	} else if r < 0x0700 {
+		return 13
+	} else if r < 0x0750 {
+		return 71
+	} else if r < 0x0780 {
+		return -1
+	} else if r < 0x07C0 {
+		return 72
+	} else if r < 0x0800 {
+		return 14
+	} else if r < 0x0900 {
+		return -1
+	} else if r < 0x0980 {
+		return 15
+	} else if r < 0x0A00 {
+		return 16
+	} else if r < 0x0A80 {
+		return 17
+	} else if r < 0x0B00 {
+		return 18
+	} else if r < 0x0B80 {
+		return 19
+	} else if r < 0x0C00 {
+		return 20
+	} else if r < 0x0C80 {
+		return 21
+	} else if r < 0x0D00 {
+		return 22
+	} else if r < 0x0D80 {
+		return 23
+	} else if r < 0x0E00 {
+		return 73
+	} else if r < 0x0E80 {
+		return 24
+	} else if r < 0x0F00 {
+		return 25
+	} else if r < 0x1000 {
+		return 70
+	} else if r < 0x10A0 {
+		return 74
+	} else if r < 0x1100 {
+		return 26
+	} else if r < 0x1200 {
+		return 28
+	} else if r < 0x1380 {
+		return 75
+	} else if r < 0x13A0 {
+		return -1
+	} else if r < 0x1400 {
+		return 76
+	} else if r < 0x1680 {
+		return 77
+	} else if r < 0x16A0 {
+		return 78
+	} else if r < 0x1700 {
+		return 79
+	} else if r < 0x1720 {
+		return 84
+	} else if r < 0x1780 {
+		return -1
+	} else if r < 0x1800 {
+		return 80
+	} else if r < 0x18B0 {
+		return 81
+	} else if r < 0x1900 {
+		return -1
+	} else if r < 0x1950 {
+		return 93
+	} else if r < 0x1980 {
+		return 94
+	} else if r < 0x19E0 {
+		return 95
+	} else if r < 0x1A00 {
+		return -1
+	} else if r < 0x1A20 {
+		return 96
+	} else if r < 0x1B00 {
+		return -1
+	} else if r < 0x1B80 {
+		return 27
+	} else if r < 0x1BC0 {
+		return 112
+	} else if r < 0x1C00 {
+		return -1
+	} else if r < 0x1C50 {
+		return 113
+	} else if r < 0x1C80 {
+		return 114
+	} else if r < 0x1E00 {
+		return -1
+	} else if r < 0x1F00 {
+		return 29
+	} else if r < 0x2000 {
+		return 30
+	} else if r < 0x2070 {
+		return 31
+	} else if r < 0x20A0 {
+		return 32
+	} else if r < 0x20D0 {
+		return 33
+	} else if r < 0x2100 {
+		return 34
+	} else if r < 0x2150 {
+		return 35
+	} else if r < 0x2190 {
+		return 36
+	} else if r < 0x2200 {
+		return 37
+	} else if r < 0x2300 {
+		return 38
+	} else if r < 0x2400 {
+		return 39
+	} else if r < 0x2440 {
+		return 40
+	} else if r < 0x2460 {
+		return 41
+	} else if r < 0x2500 {
+		return 42
+	} else if r < 0x2580 {
+		return 43
+	} else if r < 0x25A0 {
+		return 44
+	} else if r < 0x2600 {
+		return 45
+	} else if r < 0x2700 {
+		return 46
+	} else if r < 0x27C0 {
+		return 47
+	} else if r < 0x2800 {
+		return -1
+	} else if r < 0x2900 {
+		return 82
+	} else if r < 0x2C00 {
+		return -1
+	} else if r < 0x2C60 {
+		return 97
+	} else if r < 0x2C80 {
+		return -1
+	} else if r < 0x2D00 {
+		return 8
+	} else if r < 0x2D30 {
+		return -1
+	} else if r < 0x2D80 {
+		return 98
+	} else if r < 0x3000 {
+		return -1
+	} else if r < 0x3040 {
+		return 48
+	} else if r < 0x30A0 {
+		return 49
+	} else if r < 0x3100 {
+		return 50
+	} else if r < 0x3130 {
+		return 51
+	} else if r < 0x3190 {
+		return 52
+	} else if r < 0x3200 {
+		return -1
+	} else if r < 0x3300 {
+		return 54
+	} else if r < 0x3400 {
+		return 55
+	} else if r < 0x31C0 {
+		return -1
+	} else if r < 0x31F0 {
+		return 61
+	} else if r < 0x4DC0 {
+		return -1
+	} else if r < 0x4E00 {
+		return 99
+	} else if r < 0xA000 {
+		return 59
+	} else if r < 0xA490 {
+		return 83
+	} else if r < 0xA500 {
+		return -1
+	} else if r < 0xA640 {
+		return 12
+	} else if r < 0xA800 {
+		return -1
+	} else if r < 0xA830 {
+		return 100
+	} else if r < 0xA840 {
+		return -1
+	} else if r < 0xA880 {
+		return 53
+	} else if r < 0xA8E0 {
+		return 115
+	} else if r < 0xA900 {
+		return -1
+	} else if r < 0xA930 {
+		return 116
+	} else if r < 0xA960 {
+		return 117
+	} else if r < 0xAA00 {
+		return -1
+	} else if r < 0xAA60 {
+		return 118
+	} else if r < 0xAC00 {
+		return -1
+	} else if r < 0xD7AF {
+		return 56
+	} else if r < 0xE00 {
+		return -1
+	} else if r < 0xF900 {
+		return 60
+	} else if r < 0xFB00 {
+		return -1
+	} else if r < 0xFB50 {
+		return 62
+	} else if r < 0xFE00 {
+		return 63
+	} else if r < 0xFE10 {
+		return 91
+	} else if r < 0xFE20 {
+		return 65
+	} else if r < 0xFE30 {
+		return 64
+	} else if r < 0xFE50 {
+		return -1
+	} else if r < 0xFE70 {
+		return 66
+	} else if r < 0xFF00 {
+		return 67
+	} else if r < 0xFFF0 {
+		return 68
+	} else if r < 0x10000 {
+		return 69
+	} else if r < 0x10080 {
+		return 101
+	} else if r < 0x10140 {
+		return -1
+	} else if r < 0x10190 {
+		return 102
+	} else if r < 0x101D0 {
+		return 119
+	} else if r < 0x10200 {
+		return 120
+	} else if r < 0x102A0 {
+		return -1
+	} else if r < 0x102E0 {
+		return 121
+	} else if r < 0x10300 {
+		return -1
+	} else if r < 0x10330 {
+		return 85
+	} else if r < 0x10350 {
+		return 86
+	} else if r < 0x10380 {
+		return -1
+	} else if r < 0x103A0 {
+		return 103
+	} else if r < 0x103E0 {
+		return 104
+	} else if r < 0x10400 {
+		return -1
+	} else if r < 0x10450 {
+		return 87
+	} else if r < 0x10480 {
+		return 105
+	} else if r < 0x104B0 {
+		return 106
+	} else if r < 0x10800 {
+		return -1
+	} else if r < 0x10840 {
+		return 107
+	} else if r < 0x10A00 {
+		return -1
+	} else if r < 0x10A60 {
+		return 108
+	} else if r < 0x12000 {
+		return -1
+	} else if r < 0x12400 {
+		return 110
+	} else if r < 0x1D000 {
+		return -1
+	} else if r < 0x1D100 {
+		return 88
+	} else if r < 0x1D300 {
+		return -1
+	} else if r < 0x1D360 {
+		return 109
+	} else if r < 0x1D380 {
+		return 111
+	} else if r < 0x1D400 {
+		return -1
+	} else if r < 0x1D800 {
+		return 89
+	} else if r < 0x1F030 {
+		return -1
+	} else if r < 0x1F0A0 {
+		return 122
+	} else if r < 0xE0000 {
+		return -1
+	} else if r < 0xE0080 {
+		return 92
+	} else if r < 0xF0000 {
+		return -1
+	} else if r < 0xFFFFE {
+		return 90
+	}
+	return -1
 }
