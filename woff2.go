@@ -201,7 +201,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 			var err error
 			tables[iGlyf].data, tables[iLoca].data, err = reconstructGlyfLoca(tables[iGlyf].data, tables[iLoca].origLength)
 			if err != nil {
-				return nil, fmt.Errorf("glyf: %v", err)
+				return nil, err
 			}
 			if tables[iLoca].origLength != uint32(len(tables[iLoca].data)) {
 				return nil, fmt.Errorf("loca: invalid value for origLength")
@@ -349,7 +349,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 	bboxStreamSize := r.ReadUint32()
 	instructionStreamSize := r.ReadUint32()
 	if r.EOF() || nContourStreamSize != 2*uint32(numGlyphs) {
-		return nil, nil, ErrInvalidFontData
+		return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 	}
 
 	bitmapSize := ((uint32(numGlyphs) + 31) >> 5) << 2
@@ -366,7 +366,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 		overlapSimpleBitmap = NewBitmapReader(r.ReadBytes(bitmapSize))
 	}
 	if r.EOF() {
-		return nil, nil, ErrInvalidFontData
+		return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 	}
 
 	locaLength := (uint32(numGlyphs) + 1) * 2
@@ -401,7 +401,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				xMax = bboxStream.ReadInt16()
 				yMax = bboxStream.ReadInt16()
 				if bboxStream.EOF() {
-					return nil, nil, ErrInvalidFontData
+					return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 				}
 			}
 
@@ -410,13 +410,13 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 			for iContour := int16(0); iContour < nContours; iContour++ {
 				nPoint := read255Uint16(nPointsStream)
 				if math.MaxUint16-nPoints < nPoint {
-					return nil, nil, ErrInvalidFontData
+					return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 				}
 				nPoints += nPoint
 				endPtsOfContours[iContour] = nPoints - 1
 			}
 			if nPointsStream.EOF() {
-				return nil, nil, ErrInvalidFontData
+				return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 			}
 
 			var x, y int16
@@ -479,7 +479,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				if !explicitBbox {
 					if 0 < x && math.MaxInt16-x < dx || x < 0 && dx < math.MinInt16-x ||
 						0 < y && math.MaxInt16-y < dy || y < 0 && dy < math.MinInt16-y {
-						return nil, nil, ErrInvalidFontData
+						return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 					}
 					x += dx
 					y += dy
@@ -501,13 +501,13 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				}
 			}
 			if flagStream.EOF() || glyphStream.EOF() {
-				return nil, nil, ErrInvalidFontData
+				return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 			}
 
 			instructionLength := read255Uint16(glyphStream)
 			instructions := instructionStream.ReadBytes(uint32(instructionLength))
 			if instructionStream.EOF() {
-				return nil, nil, ErrInvalidFontData
+				return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 			}
 
 			// write simple glyph definition
@@ -542,7 +542,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 			xMax := bboxStream.ReadInt16()
 			yMax := bboxStream.ReadInt16()
 			if bboxStream.EOF() {
-				return nil, nil, ErrInvalidFontData
+				return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 			}
 
 			// write composite glyph definition
@@ -575,7 +575,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				}
 				compositeBytes := compositeStream.ReadBytes(uint32(numBytes))
 				if compositeStream.EOF() {
-					return nil, nil, ErrInvalidFontData
+					return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 				}
 
 				w.WriteUint16(compositeFlag)
@@ -593,7 +593,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				instructionLength := read255Uint16(glyphStream)
 				instructions := instructionStream.ReadBytes(uint32(instructionLength))
 				if instructionStream.EOF() {
-					return nil, nil, ErrInvalidFontData
+					return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 				}
 				w.WriteUint16(instructionLength)
 				w.WriteBytes(instructions)
