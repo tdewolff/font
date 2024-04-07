@@ -2038,12 +2038,12 @@ func (cff *cffTable) Write() ([]byte, error) {
 	privateOffset := charStringsOffset + len(charStringsINDEX)
 
 	// correct for maximum offset calculated above
-	correct, prevCorrect := 0, 0
+	correct, prevCorrect := 0, -1
 	for correct != prevCorrect {
 		prevCorrect = correct
-		correct = 5 - cffDICTAppendedOffsetSize(charStringsOffset) // number length in DICT
+		correct = 5 - cffDICTAppendedOffsetSize(charStringsOffset-correct) // number length in DICT
 		if privateDICT != nil {
-			correct += 5 - cffDICTAppendedOffsetSize(privateOffset) // number length in DICT
+			correct += 5 - cffDICTAppendedOffsetSize(privateOffset-correct) // number length in DICT
 		}
 		correct += maxTopDICTINDEXOffSize - cffINDEXOffSize(maxTopDICT-correct) // offSize in INDEX
 	}
