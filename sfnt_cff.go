@@ -2027,14 +2027,18 @@ func (cff *cffTable) Write() ([]byte, error) {
 	}
 	maxTopDICTINDEXOffSize := cffINDEXOffSize(maxTopDICT)
 	maxTopDICTINDEX := 3 + 2*maxTopDICTINDEXOffSize + maxTopDICT
-	charStringsOffset := int(w.Len()) + maxTopDICTINDEX + len(stringINDEX) + len(globalSubrsINDEX)
-	privateOffset := charStringsOffset + len(charStringsINDEX)
-	if math.MaxUint32 < privateOffset {
-		return nil, fmt.Errorf("offset too large")
+	charStringsOffset := int(w.Len()) + maxTopDICTINDEX + len(stringINDEX) // no overflow
+	if math.MaxInt32-charStringsOffset < len(globalSubrsINDEX) {
+		return nil, fmt.Errorf("size too large")
 	}
+	charStringsOffset += len(globalSubrsINDEX)
+	if math.MaxInt32-charStringsOffset < len(charStringsINDEX) {
+		return nil, fmt.Errorf("size too large")
+	}
+	privateOffset := charStringsOffset + len(charStringsINDEX)
 
 	// correct for maximum offset calculated above
-	correct, prevCorrect := 0, -1
+	correct, prevCorrect := 0, 0
 	for correct != prevCorrect {
 		prevCorrect = correct
 		correct = 5 - cffDICTAppendedOffsetSize(charStringsOffset) // number length in DICT
