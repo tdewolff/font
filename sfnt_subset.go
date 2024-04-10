@@ -523,6 +523,67 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) *SFNT {
 	return sfnt
 }
 
+func (sfnt *SFNT) SetGlyphNames(names []string) error {
+	table, ok := sfnt.Tables["post"]
+	if !ok {
+		return fmt.Errorf("post table doesn't exist")
+	}
+
+	sfnt.Post.NumGlyphs = sfnt.NumGlyphs()
+	sfnt.Post.GlyphNameIndex = make([]uint16, sfnt.NumGlyphs())
+	sfnt.Post.stringData = [][]byte{}
+	sfnt.Post.nameMap = nil
+
+	w := NewBinaryWriter(make([]byte, 0, 34+2*sfnt.NumGlyphs()))
+	w.WriteUint32(0x00020000) // version
+	w.WriteBytes(table[4:32])
+	w.WriteUint16(sfnt.NumGlyphs()) // numGyphs
+
+	lastIndex := uint16(258)
+	stringData := NewBinaryWriter([]byte{})
+	if int(sfnt.NumGlyphs()) < len(names) {
+		names = names[:sfnt.NumGlyphs()]
+	}
+	for glyphID, name := range names {
+		if 255 < len(name) {
+			return fmt.Errorf("name too long for glyph ID %d", glyphID)
+		}
+
+		var index uint16
+		for i, macintoshName := range macintoshGlyphNames {
+			if name == macintoshName {
+				index = uint16(i)
+				break
+			}
+		}
+		if index == 0 && name != ".notdef" {
+			for i, prevName := range names[:glyphID] {
+				if name == prevName {
+					index = uint16(sfnt.Post.GlyphNameIndex[i])
+					break
+				}
+			}
+
+			if index == 0 {
+				index = lastIndex
+				stringData.WriteByte(byte(len(name)))
+				stringData.WriteString(name)
+				sfnt.Post.stringData = append(sfnt.Post.stringData, []byte(name))
+				lastIndex++
+			}
+		}
+		sfnt.Post.GlyphNameIndex[glyphID] = index
+		w.WriteUint16(index)
+	}
+	for glyphID := uint16(len(names)); glyphID < sfnt.NumGlyphs(); glyphID++ {
+		w.WriteUint16(0) // .notdef
+	}
+	w.Write(stringData.Bytes())
+
+	sfnt.Tables["post"] = w.Bytes()
+	return nil
+}
+
 func os2UlUnicodeRange(rs []rune) [4]uint32 {
 	v := [4]uint32{0, 0, 0, 0}
 	for _, r := range rs {
