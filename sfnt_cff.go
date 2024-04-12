@@ -641,7 +641,6 @@ func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, h
 					}
 					stack = stack[:0]
 				}
-				r := callStack[len(callStack)-1]
 				r.ReadBytes(uint32((hints + 7) / 8))
 			// TODO: arithmetic, storage, and conditional operators for CFF version 1?
 			case 10, 29:
