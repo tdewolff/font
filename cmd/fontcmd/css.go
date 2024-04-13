@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -15,8 +14,7 @@ import (
 type CSS struct {
 	Quiet    bool   `short:"q" desc:"Suppress output except for errors."`
 	Force    bool   `short:"f" desc:"Force overwriting existing files."`
-	Selector string `desc:"Glyph name selector to use for CSS. Available variables: %i glyph ID, %n glyph name, %u glyph unicode in hexadecimal."`
-	Encoding string `desc:"Output encoding, either empty of base64."`
+	Selector string `desc:"Glyph name selector to use for CSS. Available variables: %i glyph ID, %n glyph name, %u glyph unicode in hexadecimal." default:".%n"`
 	Append   bool   `short:"a" desc:"Append to the output file instead of overwriting."`
 	Index    int    `short:"i" desc:"Index into font collection (used with TTC or OTC)."`
 	Output   string `short:"o" desc:"CSS output file name."`
@@ -30,8 +28,6 @@ func (cmd *CSS) Run() error {
 
 	if cmd.Output == "" {
 		return fmt.Errorf("output file name not set")
-	} else if cmd.Encoding != "" && cmd.Encoding != "base64" {
-		return fmt.Errorf("unsupported encoding for CSS: %v", cmd.Encoding)
 	}
 
 	// read from file and parse font
@@ -57,18 +53,13 @@ func (cmd *CSS) Run() error {
 		}
 	}
 
-	// apply encoding
-	if cmd.Encoding == "base64" {
-		w = base64.NewEncoder(base64.StdEncoding, w)
-	}
-
 	// write CSS classes
 	b := bufio.NewWriter(w)
 	for glyphID := uint16(1); glyphID < sfnt.NumGlyphs(); glyphID++ {
 		r := sfnt.Cmap.ToUnicode(glyphID)
 		name, ok := fmtName(cmd.Selector, sfnt, glyphID)
 		if !ok || r == 0 {
-			Warning.Println("could not write CSS class due to missing glyph name or unicode mapping for glyph ID", glyphID)
+			Warning.Printf("missing glyph name or unicode mapping for glyph: %s(%d) ", sfnt.GlyphName(glyphID), glyphID)
 		} else {
 			fmt.Fprintf(b, "%s{content:\"\\%x\"}\n", name, r)
 		}

@@ -199,35 +199,40 @@ func (cmd *Subset) Run() error {
 	}
 	sort.Slice(glyphIDs, func(i, j int) bool { return glyphIDs[i] < glyphIDs[j] })
 
+	// set glyph names
+	if sfnt.IsCFF && cmd.GlyphName == "" {
+		sfnt.CFF.SetGlyphNames(nil)
+	}
+
 	// subset font
-	sfntOld := sfnt
 	numGlyphs := sfnt.NumGlyphs()
-	sfnt = sfnt.Subset(glyphIDs, font.SubsetOptions{Tables: font.KeepMinTables})
+	sfntSubset, err := sfnt.Subset(glyphIDs, font.SubsetOptions{Tables: font.KeepMinTables})
 
 	// set glyph names
 	if cmd.GlyphName != "" {
-		names := make([]string, numGlyphs)
+		names := make([]string, len(glyphIDs))
 		for i, glyphID := range glyphIDs {
-			name, ok := fmtName(cmd.GlyphName, sfntOld, glyphID)
+			name, ok := fmtName(cmd.GlyphName, sfnt, glyphID)
 			if !ok {
-				Warning.Println("could not change glyph name due to missing glyph name or unicode mapping for glyph ID", glyphID)
+				Warning.Println("missing glyph name or unicode mapping for glyph: %s(%d)", sfnt.GlyphName(glyphID), glyphID)
 			} else {
 				names[i] = name
 			}
 		}
-		sfnt.SetGlyphNames(names)
+		if err := sfntSubset.SetGlyphNames(names); err != nil {
+			return fmt.Errorf("glyph names: %v", err)
+		}
 	}
 
 	// create font program
 	for _, output := range cmd.Outputs {
-		fmt.Println(output)
 		mimetype := extMimetype[filepath.Ext(output)]
 		if cmd.Type != "" {
 			mimetype = cmd.Type
 		} else if mimetype == "" {
 			mimetype = rMimetype
 		}
-		wLen, err := writeFont(output, mimetype, cmd.Encoding, cmd.Force, sfnt)
+		wLen, err := writeFont(output, mimetype, cmd.Encoding, cmd.Force, sfntSubset)
 		if err != nil {
 			return err
 		}
