@@ -170,7 +170,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	rBrotli := brotli.NewReader(bytes.NewReader(compData)) // err is always nil
 	dataBuf := bytes.NewBuffer(make([]byte, 0, uncompressedSize))
 	if _, err := io.Copy(dataBuf, rBrotli); err != nil {
-		return nil, fmt.Errorf("brotli: corrupted input")
+		return nil, fmt.Errorf("brotli: corrupted input: %w", err)
 	}
 	data := dataBuf.Bytes()
 	if uint32(len(data)) != uncompressedSize {
@@ -879,6 +879,7 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 
 	// pad to 4-byte boundary
 	// apparently not in the specification, but required by at least Firefox
+	totalCompressedSize := w.Len() - headerLength // should not include null bytes (see https://github.com/fontforge/fontforge/issues/5101#issuecomment-1414201810)
 	padding := (4 - w.Len()&3) & 3
 	for i := 0; i < int(padding); i++ {
 		w.WriteByte(0)
@@ -886,7 +887,7 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 
 	b := w.Bytes()
 	binary.BigEndian.PutUint32(b[8:], uint32(len(b)))               // length
-	binary.BigEndian.PutUint32(b[20:], uint32(len(b))-headerLength) // totalCompressedSize
+	binary.BigEndian.PutUint32(b[20:], uint32(totalCompressedSize)) // totalCompressedSize
 	return b, nil
 }
 
