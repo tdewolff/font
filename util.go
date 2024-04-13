@@ -116,7 +116,7 @@ func (r *BinaryReader) ReadBytes(n uint32) []byte {
 		r.eof = true
 		return nil
 	}
-	buf := r.buf[r.pos : r.pos+n]
+	buf := r.buf[r.pos : r.pos+n : r.pos+n]
 	r.pos += n
 	return buf
 }

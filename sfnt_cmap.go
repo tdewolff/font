@@ -1,8 +1,10 @@
 package font
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
+	"sort"
 )
 
 type cmapFormat0 struct {
@@ -144,6 +146,56 @@ func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
 	}
 	r, ok := subtable.unicodeMap[glyphID]
 	return r, ok
+}
+
+func cmapWriteFormat12(rs []rune, runeMap map[rune]uint16) []byte {
+	w := NewBinaryWriter([]byte{})
+	w.WriteUint16(0)  // version
+	w.WriteUint16(1)  // numTables
+	w.WriteUint16(0)  // platformID
+	w.WriteUint16(4)  // encodingID
+	w.WriteUint32(12) // subtableOffset
+
+	// format 12
+	start := w.Len()
+	w.WriteUint16(12) // format
+	w.WriteUint16(0)  // reserved
+	w.WriteUint32(16) // length (updated later)
+	w.WriteUint32(0)  // language
+	w.WriteUint32(0)  // numGroups (set later)
+
+	if 0 < len(rs) {
+		sort.Slice(rs, func(i, j int) bool { return rs[i] < rs[j] })
+
+		numGroups := uint32(1)
+		startCharCode := uint32(rs[0])
+		startGlyphID := uint32(runeMap[rs[0]])
+		n := uint32(1)
+		for i := 1; i < len(rs); i++ {
+			r := rs[i]
+			subsetGlyphID := runeMap[r]
+			if r == rs[i-1] {
+				continue
+			} else if uint32(r) == startCharCode+n && uint32(subsetGlyphID) == startGlyphID+n {
+				n++
+			} else {
+				w.WriteUint32(uint32(startCharCode))         // startCharCode
+				w.WriteUint32(uint32(startCharCode + n - 1)) // endCharCode
+				w.WriteUint32(uint32(startGlyphID))          // startGlyphID
+				numGroups++
+				startCharCode = uint32(r)
+				startGlyphID = uint32(subsetGlyphID)
+				n = 1
+			}
+		}
+		w.WriteUint32(uint32(startCharCode))         // startCharCode
+		w.WriteUint32(uint32(startCharCode + n - 1)) // endCharCode
+		w.WriteUint32(uint32(startGlyphID))          // startGlyphID
+
+		binary.BigEndian.PutUint32(w.buf[start+4:], w.Len()-start) // set length
+		binary.BigEndian.PutUint32(w.buf[start+12:], numGroups)    // set numGroups
+	}
+	return w.Bytes()
 }
 
 type cmapEncodingRecord struct {
@@ -397,6 +449,8 @@ func (sfnt *SFNT) parseCmap() error {
 					subtable.StartGlyphID[i] = startGlyphID
 				}
 				sfnt.Cmap.Subtables = append(sfnt.Cmap.Subtables, subtable)
+			default:
+				return fmt.Errorf("cmap: unknown subtable format %d", format)
 			}
 		}
 		sfnt.Cmap.EncodingRecords = append(sfnt.Cmap.EncodingRecords, cmapEncodingRecord{

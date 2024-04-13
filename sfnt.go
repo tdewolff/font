@@ -87,12 +87,25 @@ func (sfnt *SFNT) GlyphIndex(r rune) uint16 {
 
 // GlyphName returns the name of the glyph. It returns an empty string when no name exists.
 func (sfnt *SFNT) GlyphName(glyphID uint16) string {
+	if sfnt.IsCFF {
+		name, _ := sfnt.CFF.GlyphName(glyphID)
+		return name
+	}
 	return sfnt.Post.Get(glyphID)
 }
 
 // FindGlyphName returns the glyphID for a given glyph name. When the name is not defined it returns 0.
 func (sfnt *SFNT) FindGlyphName(name string) uint16 {
-	return sfnt.Post.Find(name)
+	if sfnt.IsCFF {
+		for glyphID, glyphName := range sfnt.CFF.charset {
+			if name == glyphName {
+				return uint16(glyphID)
+			}
+		}
+		return 0
+	}
+	glyphID, _ := sfnt.Post.Find(name)
+	return glyphID
 }
 
 // VerticalMetrics returns the ascender, descender, and line gap values. It returns the "win" values, or the "typo" values if OS/2.FsSelection.USE_TYPO_METRICS is set. If those are zero or not set, default to the "hhea" values.
@@ -911,16 +924,16 @@ type postTable struct {
 
 	// version 2
 	NumGlyphs      uint16
-	GlyphNameIndex []uint16
+	glyphNameIndex []uint16
 	stringData     [][]byte
 	nameMap        map[string]uint16
 }
 
 func (post *postTable) Get(glyphID uint16) string {
-	if len(post.GlyphNameIndex) <= int(glyphID) {
+	if len(post.glyphNameIndex) <= int(glyphID) {
 		return ""
 	}
-	index := post.GlyphNameIndex[glyphID]
+	index := post.glyphNameIndex[glyphID]
 	if index < 258 {
 		return macintoshGlyphNames[index]
 	} else if len(post.stringData) <= int(index)-258 {
@@ -929,10 +942,10 @@ func (post *postTable) Get(glyphID uint16) string {
 	return string(post.stringData[index-258])
 }
 
-func (post *postTable) Find(name string) uint16 {
+func (post *postTable) Find(name string) (uint16, bool) {
 	if post.nameMap == nil {
-		post.nameMap = make(map[string]uint16, len(post.GlyphNameIndex))
-		for glyphID, index := range post.GlyphNameIndex {
+		post.nameMap = make(map[string]uint16, len(post.glyphNameIndex))
+		for glyphID, index := range post.glyphNameIndex {
 			if index < 258 {
 				post.nameMap[macintoshGlyphNames[index]] = uint16(glyphID)
 			} else if int(index)-258 < len(post.stringData) {
@@ -940,7 +953,9 @@ func (post *postTable) Find(name string) uint16 {
 			}
 		}
 	}
-	return post.nameMap[name] // returns 0 if not found
+
+	glyphID, ok := post.nameMap[name] // returns 0 if not found
+	return glyphID, ok
 }
 
 func (sfnt *SFNT) parsePost() error {
@@ -969,9 +984,9 @@ func (sfnt *SFNT) parsePost() error {
 	sfnt.Post.MinMemType1 = r.ReadUint32()
 	sfnt.Post.MaxMemType1 = r.ReadUint32()
 	if version == 0x00010000 && sfnt.IsTrueType && len(b) == 32 {
-		sfnt.Post.GlyphNameIndex = make([]uint16, 258)
+		sfnt.Post.glyphNameIndex = make([]uint16, 258)
 		for i := 0; i < 258; i++ {
-			sfnt.Post.GlyphNameIndex[i] = uint16(i)
+			sfnt.Post.glyphNameIndex[i] = uint16(i)
 		}
 		return nil
 	} else if version == 0x00020000 && (sfnt.IsTrueType || isCFF2) && 34 <= len(b) {
@@ -983,17 +998,13 @@ func (sfnt *SFNT) parsePost() error {
 			return fmt.Errorf("post: bad table")
 		}
 
-		numStrings := 0
-		sfnt.Post.GlyphNameIndex = make([]uint16, sfnt.Post.NumGlyphs)
+		sfnt.Post.glyphNameIndex = make([]uint16, sfnt.Post.NumGlyphs)
 		for i := 0; i < int(sfnt.Post.NumGlyphs); i++ {
-			sfnt.Post.GlyphNameIndex[i] = r.ReadUint16()
-			if 258 <= sfnt.Post.GlyphNameIndex[i] {
-				numStrings++
-			}
+			sfnt.Post.glyphNameIndex[i] = r.ReadUint16()
 		}
 
 		// get string data first
-		sfnt.Post.stringData = make([][]byte, 0, numStrings)
+		sfnt.Post.stringData = [][]byte{}
 		for 2 <= r.Len() {
 			length := r.ReadUint8()
 			if r.Len() < uint32(length) || 63 < length {
@@ -1001,7 +1012,7 @@ func (sfnt *SFNT) parsePost() error {
 			}
 			sfnt.Post.stringData = append(sfnt.Post.stringData, r.ReadBytes(uint32(length)))
 		}
-		if 1 < r.Len() || len(sfnt.Post.stringData) != numStrings {
+		if 1 < r.Len() {
 			return fmt.Errorf("post: bad stringData")
 		}
 		return nil
@@ -1012,4 +1023,45 @@ func (sfnt *SFNT) parsePost() error {
 		return nil
 	}
 	return fmt.Errorf("post: bad version")
+}
+
+func (post *postTable) Write() ([]byte, error) {
+	version := 0x00030000
+	if 0 < post.NumGlyphs {
+		version = 0x00020000
+	}
+
+	w := NewBinaryWriter(make([]byte, 32))
+	w.WriteUint32(uint32(version))
+	w.WriteUint32(uint32(post.ItalicAngle*(1<<16) + 0.5))
+	w.WriteInt16(post.UnderlinePosition)
+	w.WriteInt16(post.UnderlineThickness)
+	w.WriteUint32(post.IsFixedPitch)
+	w.WriteUint32(post.MinMemType42)
+	w.WriteUint32(post.MaxMemType42)
+	w.WriteUint32(post.MinMemType1)
+	w.WriteUint32(post.MaxMemType1)
+	if version == 0x00030000 {
+		return w.Bytes(), nil
+	} else if len(post.glyphNameIndex) != int(post.NumGlyphs) {
+		return nil, fmt.Errorf("insufficient glyph name indices")
+	} else if math.MaxUint16 < len(post.stringData) {
+		return nil, fmt.Errorf("stringData has too many entries")
+	}
+
+	w.WriteUint16(post.NumGlyphs)
+	for _, index := range post.glyphNameIndex {
+		if 258 <= index && len(post.stringData) <= int(index-258) {
+			return nil, fmt.Errorf("glyphNameIndex out-of-range for stringData")
+		}
+		w.WriteUint16(index)
+	}
+	for _, str := range post.stringData {
+		if 63 < len(str) {
+			return nil, fmt.Errorf("glyph name too long")
+		}
+		w.WriteUint8(uint8(len(str)))
+		w.WriteBytes(str)
+	}
+	return w.Bytes(), nil
 }
