@@ -3,6 +3,8 @@ package font
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 )
 
@@ -497,4 +499,163 @@ func (sfnt *SFNT) parseLoca() error {
 	//	}
 	//}
 	return nil
+}
+
+////////////////////////////////////////////////////////////////
+
+type kernPair struct {
+	Key   uint32
+	Value int16
+}
+
+type kernFormat0 struct {
+	Coverage [8]bool
+	Pairs    []kernPair
+}
+
+func (subtable *kernFormat0) Get(l, r uint16) int16 {
+	key := uint32(l)<<16 | uint32(r)
+	lo, hi := 0, len(subtable.Pairs)
+	for lo < hi {
+		mid := (lo + hi) / 2 // can be rounded down if odd
+		pair := subtable.Pairs[mid]
+		if pair.Key < key {
+			lo = mid + 1
+		} else if key < pair.Key {
+			hi = mid
+		} else {
+			return pair.Value
+		}
+	}
+	return 0
+}
+
+type kernTable struct {
+	Subtables []kernFormat0
+}
+
+func (kern *kernTable) Get(l, r uint16) (k int16) {
+	for _, subtable := range kern.Subtables {
+		if !subtable.Coverage[1] { // kerning values
+			k += subtable.Get(l, r)
+		} else if min := subtable.Get(l, r); k < min { // minimum values (usually last subtable)
+			k = min // TODO: test minimal kerning
+		}
+	}
+	return
+}
+
+func (sfnt *SFNT) parseKern() error {
+	// TODO: lazy parse
+	b, ok := sfnt.Tables["kern"]
+	if !ok {
+		return fmt.Errorf("kern: missing table")
+	} else if len(b) < 4 {
+		return fmt.Errorf("kern: bad table")
+	}
+
+	r := NewBinaryReader(b)
+	majorVersion := r.ReadUint16()
+	if majorVersion != 0 && majorVersion != 1 {
+		return fmt.Errorf("kern: bad version %d", majorVersion)
+	}
+
+	var nTables uint32
+	if majorVersion == 0 {
+		nTables = uint32(r.ReadUint16())
+	} else if majorVersion == 1 {
+		minorVersion := r.ReadUint16()
+		if minorVersion != 0 {
+			return fmt.Errorf("kern: bad minor version %d", minorVersion)
+		}
+		nTables = r.ReadUint32()
+	}
+
+	sfnt.Kern = &kernTable{}
+	for j := 0; j < int(nTables); j++ {
+		if r.Len() < 6 {
+			return fmt.Errorf("kern: bad subtable %d", j)
+		}
+
+		subtable := kernFormat0{}
+		startPos := r.Pos()
+		subtableVersion := r.ReadUint16()
+		if subtableVersion != 0 {
+			// TODO: supported other kern subtable versions
+			continue
+		}
+		length := r.ReadUint16()
+		format := r.ReadUint8()
+		subtable.Coverage = Uint8ToFlags(r.ReadUint8())
+		if format != 0 {
+			// TODO: supported other kern subtable formats
+			continue
+		}
+		if r.Len() < 8 {
+			return fmt.Errorf("kern: bad subtable %d", j)
+		}
+		nPairs := r.ReadUint16()
+		_ = r.ReadUint16() // searchRange
+		_ = r.ReadUint16() // entrySelector
+		_ = r.ReadUint16() // rangeShift
+		if uint32(length) < 14+6*uint32(nPairs) || r.Len() < uint32(length) {
+			if j+1 == int(nTables) {
+				// for some fonts the subtable's length exceeds what can fit in a uint16
+				// we allow only the last subtable to exceed as long as it stays within the table
+				pairsLength := 6 * uint32(nPairs)
+				pairsLength &= 0xFFFF
+				if uint32(length) != 14+pairsLength || r.Len() < pairsLength {
+					return fmt.Errorf("kern: bad length for subtable %d", j)
+				}
+			} else {
+				return fmt.Errorf("kern: bad length for subtable %d", j)
+			}
+		}
+
+		sorted := true
+		subtable.Pairs = make([]kernPair, nPairs)
+		for i := 0; i < int(nPairs); i++ {
+			subtable.Pairs[i].Key = r.ReadUint32()
+			subtable.Pairs[i].Value = r.ReadInt16()
+			if 0 < i && subtable.Pairs[i].Key <= subtable.Pairs[i-1].Key {
+				sorted = false
+			}
+		}
+		if !sorted {
+			// some fonts haven't sorted the pairs, allow those subtables and sort them here
+			sort.SliceStable(subtable.Pairs, func(i, j int) bool {
+				return subtable.Pairs[i].Key < subtable.Pairs[j].Key
+			})
+		}
+
+		// read unread bytes if length is bigger
+		_ = r.ReadBytes(uint32(length) - (r.Pos() - startPos))
+		sfnt.Kern.Subtables = append(sfnt.Kern.Subtables, subtable)
+	}
+	return nil
+}
+
+func (kern *kernTable) Write() []byte {
+	w := NewBinaryWriter([]byte{})
+	w.WriteUint16(0)                           // version
+	w.WriteUint16(uint16(len(kern.Subtables))) // nTables
+	for _, subtable := range kern.Subtables {
+		w.WriteUint16(0)                                     // version
+		w.WriteUint16(6 + 8 + 6*uint16(len(subtable.Pairs))) // length
+		w.WriteUint8(0)                                      // format
+		w.WriteUint8(flagsToUint8(subtable.Coverage))        // coverage
+
+		nPairs := uint16(len(subtable.Pairs))
+		entrySelector := uint16(math.Log2(float64(nPairs)))
+		searchRange := uint16(1 << entrySelector * 6)
+		w.WriteUint16(nPairs)
+		w.WriteUint16(searchRange)
+		w.WriteUint16(entrySelector)
+		w.WriteUint16(nPairs*6 - searchRange)
+		for _, pair := range subtable.Pairs {
+			w.WriteUint32(pair.Key)
+			w.WriteInt16(pair.Value)
+		}
+	}
+	return w.Bytes()
 }
