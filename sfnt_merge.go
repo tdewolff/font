@@ -7,7 +7,7 @@ import (
 )
 
 type MergeOptions struct {
-	IdentityCmap bool
+	RearrangeCmap bool
 }
 
 // Merge merges the glyphs of another font into the current one in-place by merging the glyf, loca, kern tables (or CFF table for CFF fonts), as well as the hmtx, cmap, and post tables. Also updates the maxp, head, and OS/2 tables. The other font remains untouched.
@@ -139,20 +139,10 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 			}
 		}
 	} else if _, ok := sfnt.Tables["CFF "]; ok && sfnt.IsCFF {
-		// remove .notdef, copy to not overwrite it later when updating subroutine indices
-		offset := sfnt2.CFF.charStrings.offset[1]
-		charStrings2 := &cffINDEX{
-			offset: append([]uint32{}, sfnt2.CFF.charStrings.offset[1:]...),
-			data:   append([]byte{}, sfnt2.CFF.charStrings.data[offset:]...),
-		}
-		for i := range charStrings2.offset {
-			charStrings2.offset[i] -= offset
-		}
-
 		// find new number of subroutines, which may change the index encoding / bias
-		localSubrsLen, globalSubrsLen := 0, 0
-		var localSubrs, localSubrs2 *cffINDEX
-		var globalSubrs, globalSubrs2 *cffINDEX
+		localSubrsLen, globalSubrsLen := 0, 0 // new length
+		localSubrs, localSubrs2 := &cffINDEX{}, &cffINDEX{}
+		globalSubrs, globalSubrs2 := &cffINDEX{}, &cffINDEX{}
 		if 0 < len(sfnt.CFF.fonts.localSubrs) && 0 < sfnt.CFF.fonts.localSubrs[0].Len() {
 			localSubrs = sfnt.CFF.fonts.localSubrs[0]
 			localSubrsLen += sfnt.CFF.fonts.localSubrs[0].Len()
@@ -166,80 +156,94 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 			globalSubrsLen += sfnt.CFF.globalSubrs.Len()
 		}
 		if 0 < sfnt2.CFF.globalSubrs.Len() {
-			globalSubrs = sfnt2.CFF.globalSubrs
+			globalSubrs2 = sfnt2.CFF.globalSubrs
 			globalSubrsLen += sfnt2.CFF.globalSubrs.Len()
 		}
 
 		// update index encoding (identity mapping) for the original glyphs
 		var localSubrsMap map[int32]int32  // old to new index
 		var globalSubrsMap map[int32]int32 // old to new index
-		if localSubrs != nil && cffNumberSize(localSubrsLen) != cffNumberSize(localSubrs.Len()) {
+		if cffNumberSize(localSubrsLen) != cffNumberSize(localSubrs.Len()) {
 			localSubrsMap = make(map[int32]int32, localSubrs.Len())
 			for i := 0; i < localSubrs.Len(); i++ {
 				localSubrsMap[int32(i)] = int32(i)
 			}
 		}
-		if globalSubrs != nil && cffNumberSize(globalSubrsLen) != cffNumberSize(globalSubrs.Len()) {
+		if cffNumberSize(globalSubrsLen) != cffNumberSize(globalSubrs.Len()) {
 			globalSubrsMap = make(map[int32]int32, globalSubrs.Len())
 			for i := 0; i < globalSubrs.Len(); i++ {
 				globalSubrsMap[int32(i)] = int32(i)
 			}
 		}
-		if localSubrsMap != nil || globalSubrsMap != nil {
-			cffUpdateSubrs(sfnt.CFF.charStrings, localSubrsMap, globalSubrsMap, localSubrsLen, globalSubrsLen)
-			if localSubrs != nil {
-				cffUpdateSubrs(localSubrs, localSubrsMap, globalSubrsMap, localSubrsLen, globalSubrsLen)
-			}
-			if globalSubrs != nil {
-				cffUpdateSubrs(globalSubrs, localSubrsMap, globalSubrsMap, localSubrsLen, globalSubrsLen)
-			}
+		if err := sfnt.CFF.updateSubrs(localSubrsMap, globalSubrsMap, localSubrs, globalSubrs); err != nil {
+			return err
 		}
 
 		// update indices and index encoding for the merging glyphs
 		var localSubrsMap2 map[int32]int32  // old to new index
 		var globalSubrsMap2 map[int32]int32 // old to new index
-		if localSubrs2 != nil && (localSubrs != nil || cffNumberSize(localSubrsLen) != cffNumberSize(localSubrs2.Len())) {
-			offset := 0
-			if localSubrs != nil {
-				offset = localSubrs.Len()
-			}
+		if 0 < localSubrs.Len() || cffNumberSize(localSubrsLen) != cffNumberSize(localSubrs2.Len()) {
+			offset := localSubrs.Len()
 			localSubrsMap2 = make(map[int32]int32, localSubrs2.Len())
 			for i := 0; i < localSubrs2.Len(); i++ {
 				localSubrsMap2[int32(i)] = int32(offset + i)
 			}
 		}
-		if globalSubrs2 != nil && (globalSubrs != nil || cffNumberSize(globalSubrsLen) != cffNumberSize(globalSubrs2.Len())) {
-			offset := 0
-			if globalSubrs != nil {
-				offset = globalSubrs.Len()
-			}
+		if 0 < globalSubrs.Len() || cffNumberSize(globalSubrsLen) != cffNumberSize(globalSubrs2.Len()) {
+			offset := globalSubrs.Len()
 			globalSubrsMap2 = make(map[int32]int32, globalSubrs2.Len())
 			for i := 0; i < globalSubrs2.Len(); i++ {
 				globalSubrsMap2[int32(i)] = int32(offset + i)
 			}
 		}
-		if localSubrsMap2 != nil || globalSubrsMap2 != nil {
-			cffUpdateSubrs(charStrings2, localSubrsMap2, globalSubrsMap2, localSubrsLen, globalSubrsLen)
-			if localSubrs2 != nil {
-				cffUpdateSubrs(localSubrs2, localSubrsMap2, globalSubrsMap2, localSubrsLen, globalSubrsLen)
-			}
-			if globalSubrs2 != nil {
-				cffUpdateSubrs(globalSubrs2, localSubrsMap2, globalSubrsMap2, localSubrsLen, globalSubrsLen)
-			}
+
+		// copy to keep original untouched
+		cff2 := &cffTable{
+			version:     sfnt2.CFF.version,
+			charStrings: sfnt2.CFF.charStrings.Copy(),
+			globalSubrs: sfnt2.CFF.globalSubrs,
+			fonts:       sfnt2.CFF.fonts,
 		}
 
-		// update table
-		sfnt.CFF.charStrings.Extend(charStrings2)
-		sfnt.CFF.globalSubrs.Extend(globalSubrs2)
-		if localSubrs != nil {
-			sfnt.CFF.fonts.localSubrs[0].Extend(localSubrs2)
-		} else if localSubrs2 != nil {
-			sfnt.CFF.fonts.localSubrs = []*cffINDEX{localSubrs2}
+		// remove .notdef
+		offset := cff2.charStrings.offset[1]
+		cff2.charStrings.offset = cff2.charStrings.offset[1:]
+		cff2.charStrings.data = cff2.charStrings.data[offset:]
+		for i := range cff2.charStrings.offset {
+			cff2.charStrings.offset[i] -= offset
+		}
+
+		// update subroutine indices for merging font
+		localSubrs.Extend(localSubrs2)
+		globalSubrs.Extend(globalSubrs2)
+		if err := cff2.updateSubrs(localSubrsMap2, globalSubrsMap2, localSubrs, globalSubrs); err != nil {
+			return err
+		}
+
+		// merge charStrings
+		sfnt.CFF.charStrings.Extend(cff2.charStrings)
+		sfnt.CFF.globalSubrs = globalSubrs
+		sfnt.CFF.fonts.localSubrs = []*cffINDEX{localSubrs}
+
+		// update charset
+		if sfnt2.CFF.charset != nil {
+			if sfnt.CFF.charset == nil {
+				numGlyphs := sfnt.CFF.charStrings.Len()
+				for i := 0; i < numGlyphs; i++ {
+					sfnt.CFF.charset = append(sfnt.CFF.charset, "")
+				}
+			}
+			sfnt.CFF.charset = append(sfnt.CFF.charset, sfnt2.CFF.charset[1:]...)
+		} else if sfnt.CFF.charset != nil {
+			numGlyphs := sfnt2.CFF.charStrings.Len() - 1
+			for i := 0; i < numGlyphs; i++ {
+				sfnt.CFF.charset = append(sfnt.CFF.charset, "")
+			}
 		}
 
 		b, err := sfnt.CFF.Write()
 		if err != nil {
-			panic("invalid CFF table: " + err.Error())
+			return err
 		}
 		sfnt.Tables["CFF "] = b
 	}
@@ -290,10 +294,13 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 	if _, ok := sfnt.Tables["cmap"]; ok {
 		rs := make([]rune, 0, numGlyphs)
 		runeMap := make(map[rune]uint16, numGlyphs) // for OS/2
-		if options.IdentityCmap {
-			for glyphID := rune(0); glyphID < rune(numGlyphs); glyphID++ {
-				rs = append(rs, glyphID)
-				runeMap[glyphID] = uint16(glyphID)
+		if options.RearrangeCmap {
+			rs = append(rs, 65535) // .notdef
+			runeMap[65535] = 0
+			for glyphID := 1; glyphID < int(numGlyphs); glyphID++ {
+				r := rune(glyphID + 32) // unicode codepoints below 33 don't display in firefox
+				rs = append(rs, r)
+				runeMap[r] = uint16(glyphID)
 			}
 		} else {
 			for glyphID := 0; glyphID < int(numGlyphs); glyphID++ {
@@ -316,7 +323,7 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 						} else {
 							otherGlyphName = sfnt2.GlyphName(1 + otherGlyphID - origNumGlyphs)
 						}
-						return fmt.Errorf("two or more glyphs have the same unicode mapping: %s(%d) and %s(%d)", glyphName, glyphID, otherGlyphName, otherGlyphID)
+						return fmt.Errorf("cmap: two or more glyphs have the same unicode mapping: %s(%d) and %s(%d)", glyphName, glyphID, otherGlyphName, otherGlyphID)
 					}
 					rs = append(rs, r)
 					runeMap[r] = uint16(glyphID)

@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 )
 
 // TODO: use FDSelect for Font DICTs
 // TODO: CFF has winding rule even-odd? CFF2 has winding rule nonzero
+
+var ErrBadNumOperands = fmt.Errorf("bad number of operands for operator")
 
 type cffTable struct {
 	version     int
@@ -99,7 +102,7 @@ func (sfnt *SFNT) parseCFF() error {
 		format := r.ReadUint8()
 		switch format {
 		case 0:
-			if r.Len() != uint32(2*(numGlyphs-1)) {
+			if r.Len() < uint32(2*(numGlyphs-1)) {
 				return fmt.Errorf("CFF: bad Charset format 0")
 			}
 			for i := 1; i < numGlyphs; i++ {
@@ -236,7 +239,11 @@ func (cff *cffTable) TopDICT() *cffTopDICT {
 }
 
 func (cff *cffTable) PrivateDICT(glyphID uint16) (*cffPrivateDICT, error) {
-	return cff.fonts.GetPrivate(uint32(glyphID))
+	privateDICT := cff.fonts.GetPrivate(glyphID)
+	if privateDICT == nil {
+		return nil, fmt.Errorf("bad glyph ID %v for Private DICT", glyphID)
+	}
+	return privateDICT, nil
 }
 
 func (cff *cffTable) GlyphName(glyphID uint16) (string, bool) {
@@ -256,59 +263,60 @@ func (cff *cffTable) SetGlyphNames(names []string) {
 	cff.charset = names
 }
 
-//type cffCharStringOp int32
-//
-//const (
-//	cffHstem      cffCharStringOp = 1
-//	cffVstem      cffCharStringOp = 3
-//	cffVmoveto    cffCharStringOp = 4
-//	cffRlineto    cffCharStringOp = 5
-//	cffHlineto    cffCharStringOp = 6
-//	cffVlineto    cffCharStringOp = 7
-//	cffRrcurveto  cffCharStringOp = 8
-//	cffCallsubr   cffCharStringOp = 10
-//	cffReturn     cffCharStringOp = 11
-//	cffEscape     cffCharStringOp = 12
-//	cffEndchar    cffCharStringOp = 14
-//	cffHstemhm    cffCharStringOp = 18
-//	cffHintmask   cffCharStringOp = 19
-//	cffCntrmask   cffCharStringOp = 20
-//	cffRmoveto    cffCharStringOp = 21
-//	cffHmoveto    cffCharStringOp = 22
-//	cffVstemhm    cffCharStringOp = 23
-//	cffRcurveline cffCharStringOp = 24
-//	cffRlinecurve cffCharStringOp = 25
-//	cffVvcurveto  cffCharStringOp = 26
-//	cffHhcurveto  cffCharStringOp = 27
-//	cffShortint   cffCharStringOp = 28
-//	cffCallgsubr  cffCharStringOp = 29
-//	cffVhcurveto  cffCharStringOp = 30
-//	cffHvcurveto  cffCharStringOp = 31
-//	cffAnd        cffCharStringOp = 256 + 3
-//	cffOr         cffCharStringOp = 256 + 4
-//	cffNot        cffCharStringOp = 256 + 5
-//	cffAbs        cffCharStringOp = 256 + 9
-//	cffAdd        cffCharStringOp = 256 + 10
-//	cffSub        cffCharStringOp = 256 + 11
-//	cffDiv        cffCharStringOp = 256 + 12
-//	cffNeg        cffCharStringOp = 256 + 14
-//	cffEq         cffCharStringOp = 256 + 15
-//	cffDrop       cffCharStringOp = 256 + 18
-//	cffPut        cffCharStringOp = 256 + 20
-//	cffGet        cffCharStringOp = 256 + 21
-//	cffIfelse     cffCharStringOp = 256 + 22
-//	cffRandom     cffCharStringOp = 256 + 23
-//	cffMul        cffCharStringOp = 256 + 24
-//	cffSqrt       cffCharStringOp = 256 + 26
-//	cffDup        cffCharStringOp = 256 + 27
-//	cffExch       cffCharStringOp = 256 + 28
-//	cffIndex      cffCharStringOp = 256 + 29
-//	cffRoll       cffCharStringOp = 256 + 30
-//	cffHflex      cffCharStringOp = 256 + 34
-//	cffFlex       cffCharStringOp = 256 + 35
-//	cffHflex1     cffCharStringOp = 256 + 36
-//	cffFlex1      cffCharStringOp = 256 + 37
-//)
+const (
+	cffHstem      int32 = 1
+	cffVstem      int32 = 3
+	cffVmoveto    int32 = 4
+	cffRlineto    int32 = 5
+	cffHlineto    int32 = 6
+	cffVlineto    int32 = 7
+	cffRrcurveto  int32 = 8
+	cffCallsubr   int32 = 10
+	cffReturn     int32 = 11
+	cffEscape     int32 = 12
+	cffEndchar    int32 = 14
+	cffHstemhm    int32 = 18
+	cffHintmask   int32 = 19
+	cffCntrmask   int32 = 20
+	cffRmoveto    int32 = 21
+	cffHmoveto    int32 = 22
+	cffVstemhm    int32 = 23
+	cffRcurveline int32 = 24
+	cffRlinecurve int32 = 25
+	cffVvcurveto  int32 = 26
+	cffHhcurveto  int32 = 27
+	cffShortint   int32 = 28
+	cffCallgsubr  int32 = 29
+	cffVhcurveto  int32 = 30
+	cffHvcurveto  int32 = 31
+	cffAnd        int32 = 256 + 3
+	cffOr         int32 = 256 + 4
+	cffNot        int32 = 256 + 5
+	cffAbs        int32 = 256 + 9
+	cffAdd        int32 = 256 + 10
+	cffSub        int32 = 256 + 11
+	cffDiv        int32 = 256 + 12
+	cffNeg        int32 = 256 + 14
+	cffEq         int32 = 256 + 15
+	cffDrop       int32 = 256 + 18
+	cffPut        int32 = 256 + 20
+	cffGet        int32 = 256 + 21
+	cffIfelse     int32 = 256 + 22
+	cffRandom     int32 = 256 + 23
+	cffMul        int32 = 256 + 24
+	cffSqrt       int32 = 256 + 26
+	cffDup        int32 = 256 + 27
+	cffExch       int32 = 256 + 28
+	cffIndex      int32 = 256 + 29
+	cffRoll       int32 = 256 + 30
+	cffHflex      int32 = 256 + 34
+	cffFlex       int32 = 256 + 35
+	cffHflex1     int32 = 256 + 36
+	cffFlex1      int32 = 256 + 37
+
+	cff2Vsindex int32 = 15
+	cff2Blend   int32 = 16
+)
 
 func cffReadCharStringNumber(r *BinaryReader, b0 int32) int32 {
 	var v int32
@@ -328,33 +336,68 @@ func cffReadCharStringNumber(r *BinaryReader, b0 int32) int32 {
 	return v
 }
 
-func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, hinting Hinting) error {
+func (cff *cffTable) getSubroutine(glyphID uint16, b0 int32, stack int32) (int32, []byte, error) {
+	typ := "local"
+	var subrs *cffINDEX
+	if b0 == cffCallsubr {
+		subrs = cff.fonts.GetLocalSubrs(glyphID)
+		if subrs == nil {
+			return 0, nil, fmt.Errorf("%v subroutine: glyph's font doesn't have local subroutines", typ)
+		}
+	} else {
+		typ = "global"
+		subrs = cff.globalSubrs
+	}
+
+	// add bias
+	n := subrs.Len()
+	index := stack >> 16
+	if n < 1240 {
+		index += 107
+	} else if n < 33900 {
+		index += 1131
+	} else {
+		index += 32768
+	}
+	if index < 0 || math.MaxUint16 < index {
+		return 0, nil, fmt.Errorf("%v subroutine: bad index %v", typ, index)
+	}
+
+	// get subroutine charString
+	subr := subrs.Get(uint16(index))
+	if subr == nil {
+		return 0, nil, fmt.Errorf("%v subroutine: %v doesn't exist", typ, index)
+	} else if 65535 < len(subr) {
+		return 0, nil, fmt.Errorf("%v subroutine: %v too long", typ, index)
+	}
+	return index, subr, nil
+}
+
+//type cffCallStack struct {
+//	s *cffINDEX
+//	k uint16 // index into index.offset
+//	r *BinaryReader
+//}
+
+func (cff *cffTable) parseCharString(glyphID uint16, cb func(*BinaryReader, int32, []int32) error) error {
 	table := "CFF"
 	if cff.version == 2 {
 		table = "CFF2"
 	}
-	errBadNumOperands := fmt.Errorf("%v: bad number of operands for operator", table)
 
 	charString := cff.charStrings.Get(glyphID)
 	if charString == nil {
 		return fmt.Errorf("%v: bad glyphID %v", table, glyphID)
-	} else if 65525 < len(charString) {
+	} else if 65535 < len(charString) {
 		return fmt.Errorf("%v: charstring too long", table)
 	}
-	localSubrs, err := cff.fonts.GetLocalSubrs(uint32(glyphID))
-	if err != nil {
-		return fmt.Errorf("%v: %w", table, err)
-	}
 
-	// x,y are raised to most-significant 16 bits and treat less-significant bits as fraction
-	var x, y int32
-	f /= float64(1 << 16) // correct back
+	callStack := []*BinaryReader{}
+	r := NewBinaryReader(charString)
 
 	hints := 0
 	stack := []int32{} // TODO: may overflow?
-	firstOperator := true
-	callStack := []*BinaryReader{}
-	r := NewBinaryReader(charString)
+	beforeMoveto := true
 	for {
 		if cff.version == 2 && r.Len() == 0 && 0 < len(callStack) {
 			// end of subroutine
@@ -366,347 +409,67 @@ func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, h
 		}
 
 		b0 := int32(r.ReadUint8())
-		if 32 <= b0 || b0 == 28 {
+		if 32 <= b0 || b0 == cffShortint {
 			v := cffReadCharStringNumber(r, b0)
 			if cff.version == 1 && 48 <= len(stack) || cff.version == 2 && 513 <= len(stack) {
 				return fmt.Errorf("%v: too many operands for operator", table)
 			}
 			stack = append(stack, v)
 		} else {
-			if firstOperator && cff.version == 1 && (b0 == 1 || b0 == 3 || b0 == 4 || b0 == 14 || 18 <= b0 && b0 <= 23) {
-				// optionally parse width
-				hasWidth := len(stack)%2 == 1
-				if b0 == 22 || b0 == 4 {
-					hasWidth = !hasWidth
-				}
-				if hasWidth {
-					stack = stack[1:]
-				}
-			}
-			if b0 != 29 && b0 != 10 && b0 != 11 {
-				// callgsubr, callsubr, and return don't influence the width operator
-				firstOperator = false
-			}
-
-			if b0 == 12 {
+			if b0 == cffEscape {
 				b0 = 256 + int32(r.ReadUint8())
 			}
 
+			if beforeMoveto && cff.version == 1 {
+				if b0 == cffHstem || b0 == cffVstem || b0 == cffVmoveto || b0 == cffEndchar || cffHstemhm <= b0 && b0 <= cffVstemhm {
+					// stack clearing operators, parse optional width
+					hasWidth := len(stack)%2 == 1
+					if b0 == cffHmoveto || b0 == cffVmoveto {
+						hasWidth = !hasWidth
+					}
+					if hasWidth {
+						stack = stack[1:]
+					}
+					if b0 == cffRmoveto || b0 == cffHmoveto || b0 == cffVmoveto {
+						beforeMoveto = false
+					}
+				} else if b0 != cffCallsubr && b0 != cffCallgsubr {
+					return fmt.Errorf("%v: unexpected operator %d before moveto", table, b0)
+				}
+			} else if !beforeMoveto && cff.version == 1 && (b0 == cffHstem || b0 == cffVstem || b0 == cffHstemhm || b0 == cffVstemhm) {
+				return fmt.Errorf("%v: unexpected operator %d after moveto", table, b0)
+			}
+
+			if err := cb(r, b0, stack); err != nil {
+				return fmt.Errorf("%v: %v", table, err)
+			}
+
+			// handle hint and subroutine operators, clear stack for most operators
 			switch b0 {
-			case 21:
-				// rmoveto
-				if len(stack) != 2 {
-					return errBadNumOperands
-				}
-				x += stack[0]
-				y += stack[1]
-				p.Close()
-				p.MoveTo(x0+f*float64(x), y0+f*float64(y))
-				stack = stack[:0]
-			case 22:
-				// hmoveto
-				if len(stack) != 1 {
-					return errBadNumOperands
-				}
-				x += stack[0]
-				p.Close()
-				p.MoveTo(x0+f*float64(x), y0+f*float64(y))
-				stack = stack[:0]
-			case 4:
-				// vmoveto
-				if len(stack) != 1 {
-					return errBadNumOperands
-				}
-				y += stack[0]
-				p.Close()
-				p.MoveTo(x0+f*float64(x), y0+f*float64(y))
-				stack = stack[:0]
-			case 5:
-				// rlineto
-				if len(stack) == 0 || len(stack)%2 != 0 {
-					return errBadNumOperands
-				}
-				for i := 0; i < len(stack); i += 2 {
-					x += stack[i+0]
-					y += stack[i+1]
-					p.LineTo(x0+f*float64(x), y0+f*float64(y))
-				}
-				stack = stack[:0]
-			case 6, 7:
-				// hlineto and vlineto
-				if len(stack) == 0 {
-					return errBadNumOperands
-				}
-				vertical := b0 == 7
-				for i := 0; i < len(stack); i++ {
-					if !vertical {
-						x += stack[i]
-					} else {
-						y += stack[i]
-					}
-					p.LineTo(x0+f*float64(x), y0+f*float64(y))
-					vertical = !vertical
-				}
-				stack = stack[:0]
-			case 8:
-				// rrcurveto
-				if len(stack) == 0 || len(stack)%6 != 0 {
-					return errBadNumOperands
-				}
-				for i := 0; i < len(stack); i += 6 {
-					x += stack[i+0]
-					y += stack[i+1]
-					cpx1, cpy1 := x, y
-					x += stack[i+2]
-					y += stack[i+3]
-					cpx2, cpy2 := x, y
-					x += stack[i+4]
-					y += stack[i+5]
-					p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-				}
-				stack = stack[:0]
-			case 27, 26:
-				// hhcurvetp and vvcurveto
-				if len(stack) < 4 || len(stack)%4 != 0 && (len(stack)-1)%4 != 0 {
-					return errBadNumOperands
-				}
-				vertical := b0 == 26
-				i := 0
-				if len(stack)%4 == 1 {
-					if !vertical {
-						y += stack[0]
-					} else {
-						x += stack[0]
-					}
-					i++
-				}
-				for ; i < len(stack); i += 4 {
-					if !vertical {
-						x += stack[i+0]
-					} else {
-						y += stack[i+0]
-					}
-					cpx1, cpy1 := x, y
-					x += stack[i+1]
-					y += stack[i+2]
-					cpx2, cpy2 := x, y
-					if !vertical {
-						x += stack[i+3]
-					} else {
-						y += stack[i+3]
-					}
-					p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-				}
-				stack = stack[:0]
-			case 31, 30:
-				// hvcurvetp and vhcurveto
-				if len(stack) < 4 || len(stack)%4 != 0 && (len(stack)-1)%4 != 0 {
-					return errBadNumOperands
-				}
-				vertical := b0 == 30
-				for i := 0; i < len(stack); i += 4 {
-					if !vertical {
-						x += stack[i+0]
-					} else {
-						y += stack[i+0]
-					}
-					cpx1, cpy1 := x, y
-					x += stack[i+1]
-					y += stack[i+2]
-					cpx2, cpy2 := x, y
-					if !vertical {
-						y += stack[i+3]
-					} else {
-						x += stack[i+3]
-					}
-					if i+5 == len(stack) {
-						if !vertical {
-							x += stack[i+4]
-						} else {
-							y += stack[i+4]
-						}
-						i++
-					}
-					p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-					vertical = !vertical
-				}
-				stack = stack[:0]
-			case 24:
-				// rcurveline
-				if len(stack) < 2 || (len(stack)-2)%6 != 0 {
-					return errBadNumOperands
-				}
-				i := 0
-				for ; i < len(stack)-2; i += 6 {
-					x += stack[i+0]
-					y += stack[i+1]
-					cpx1, cpy1 := x, y
-					x += stack[i+2]
-					y += stack[i+3]
-					cpx2, cpy2 := x, y
-					x += stack[i+4]
-					y += stack[i+5]
-					p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-				}
-				x += stack[i+0]
-				y += stack[i+1]
-				p.LineTo(x0+f*float64(x), y0+f*float64(y))
-				stack = stack[:0]
-			case 25:
-				// rlinecurve
-				if len(stack) < 6 || (len(stack)-6)%2 != 0 {
-					return errBadNumOperands
-				}
-				i := 0
-				for ; i < len(stack)-6; i += 2 {
-					x += stack[i+0]
-					y += stack[i+1]
-					p.LineTo(x0+f*float64(x), y0+f*float64(y))
-				}
-				x += stack[i+0]
-				y += stack[i+1]
-				cpx1, cpy1 := x, y
-				x += stack[i+2]
-				y += stack[i+3]
-				cpx2, cpy2 := x, y
-				x += stack[i+4]
-				y += stack[i+5]
-				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-				stack = stack[:0]
-			case 256 + 35:
-				// flex
-				if len(stack) != 13 {
-					return errBadNumOperands
-				}
-				// always use cubic Béziers
-				for i := 0; i < 12; i += 6 {
-					x += stack[i+0]
-					y += stack[i+1]
-					cpx1, cpy1 := x, y
-					x += stack[i+2]
-					y += stack[i+3]
-					cpx2, cpy2 := x, y
-					x += stack[i+4]
-					y += stack[i+5]
-					p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-				}
-				stack = stack[:0]
-			case 256 + 34:
-				// hflex
-				if len(stack) != 7 {
-					return errBadNumOperands
-				}
-				// always use cubic Béziers
-				y1 := y
-				x += stack[0]
-				cpx1, cpy1 := x, y
-				x += stack[1]
-				y += stack[2]
-				cpx2, cpy2 := x, y
-				x += stack[3]
-				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-
-				x += stack[4]
-				cpx1, cpy1 = x, y
-				x += stack[5]
-				y = y1
-				cpx2, cpy2 = x, y
-				x += stack[6]
-				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-				stack = stack[:0]
-			case 256 + 36:
-				// hflex1
-				if len(stack) != 9 {
-					return errBadNumOperands
-				}
-				// always use cubic Béziers
-				y1 := y
-				x += stack[0]
-				y += stack[1]
-				cpx1, cpy1 := x, y
-				x += stack[2]
-				y += stack[3]
-				cpx2, cpy2 := x, y
-				x += stack[4]
-				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-
-				x += stack[5]
-				cpx1, cpy1 = x, y
-				x += stack[6]
-				y += stack[7]
-				cpx2, cpy2 = x, y
-				x += stack[8]
-				y = y1
-				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-				stack = stack[:0]
-			case 256 + 37:
-				// flex1
-				if len(stack) != 11 {
-					return errBadNumOperands
-				}
-				// always use cubic Béziers
-				x1, y1 := x, y
-				x += stack[0]
-				y += stack[1]
-				cpx1, cpy1 := x, y
-				x += stack[2]
-				y += stack[3]
-				cpx2, cpy2 := x, y
-				x += stack[4]
-				y += stack[5]
-				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-
-				x += stack[6]
-				y += stack[7]
-				cpx1, cpy1 = x, y
-				x += stack[8]
-				y += stack[9]
-				cpx2, cpy2 = x, y
-				dx, dy := x-x1, y-y1
-				if dx < 0 {
-					dx = -dx
-				}
-				if dy < 0 {
-					dy = -dy
-				}
-				if dy < dx {
-					x += stack[10]
-					y = y1
-				} else {
-					x = x1
-					y += stack[10]
-				}
-				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
-				stack = stack[:0]
-			case 14:
-				// endchar
+			case cffEndchar:
 				if cff.version == 2 {
 					return fmt.Errorf("CFF2: unsupported operator %d", b0)
 				} else if len(stack) == 4 {
 					return fmt.Errorf("CFF: unsupported endchar operands")
 				} else if len(stack) != 0 {
-					return errBadNumOperands
+					return fmt.Errorf("%v: %v", table, ErrBadNumOperands)
 				}
-				p.Close()
 				return nil
-			case 1, 3, 18, 23:
-				// hstem, vstem, hstemhm, vstemhm
+			case cffHstem, cffVstem, cffHstemhm, cffVstemhm:
 				if len(stack) < 2 || len(stack)%2 != 0 {
-					return errBadNumOperands
+					return fmt.Errorf("%v: %v", table, ErrBadNumOperands)
 				}
-				// hints are not used
 				hints += len(stack) / 2
 				if 96 < hints {
 					return fmt.Errorf("%v: too many stem hints", table)
 				}
 				stack = stack[:0]
-			case 19, 20:
-				// hintmask, cntrmask
-				if len(stack)%2 != 0 {
-					return errBadNumOperands
-				}
-				if 0 < len(stack) {
-					// vstem
+			case cffHintmask, cffCntrmask:
+				if b0 == cffHintmask && 0 < len(stack) {
+					// vstem or vstemhm
+					if len(stack)%2 != 0 {
+						return fmt.Errorf("%v: %v", table, ErrBadNumOperands)
+					}
 					hints += len(stack) / 2
 					if 96 < hints {
 						return fmt.Errorf("%v: too many stem hints", table)
@@ -714,50 +477,24 @@ func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, h
 					stack = stack[:0]
 				}
 				r.ReadBytes(uint32((hints + 7) / 8))
-			// TODO: arithmetic, storage, and conditional operators for CFF version 1?
-			case 10, 29:
+				stack = stack[:0]
+			case cffCallsubr, cffCallgsubr:
 				// callsubr and callgsubr
 				if 10 < len(callStack) {
 					return fmt.Errorf("%v: too many nested subroutines", table)
 				} else if len(stack) == 0 {
-					return errBadNumOperands
+					return fmt.Errorf("%v: %v", table, ErrBadNumOperands)
 				}
 
-				n := 0
-				if b0 == 10 {
-					n = localSubrs.Len()
-				} else {
-					n = cff.globalSubrs.Len()
-				}
-				i := stack[len(stack)-1] >> 16
-				if n < 1240 {
-					i += 107
-				} else if n < 33900 {
-					i += 1131
-				} else {
-					i += 32768
+				_, subr, err := cff.getSubroutine(glyphID, b0, stack[len(stack)-1])
+				if err != nil {
+					return fmt.Errorf("%v: %v", table, err)
 				}
 				stack = stack[:len(stack)-1]
-				if i < 0 || math.MaxUint16 < i {
-					return fmt.Errorf("%v: bad subroutine", table)
-				}
 
-				var subr []byte
-				if b0 == 10 {
-					subr = localSubrs.Get(uint16(i))
-				} else {
-					subr = cff.globalSubrs.Get(uint16(i))
-				}
-				if subr == nil {
-					return fmt.Errorf("%v: bad subroutine", table)
-				} else if 65525 < len(charString) {
-					return fmt.Errorf("%v: subroutine too long", table)
-				}
 				callStack = append(callStack, r)
 				r = NewBinaryReader(subr)
-				firstOperator = true
-			case 11:
-				// return
+			case cffReturn:
 				if cff.version == 2 {
 					return fmt.Errorf("%v: unsupported operator %d", table, b0)
 				} else if len(callStack) == 0 {
@@ -765,19 +502,23 @@ func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, h
 				}
 				r = callStack[len(callStack)-1]
 				callStack = callStack[:len(callStack)-1]
-			case 16:
+			case cffRmoveto, cffHmoveto, cffVmoveto, cffRlineto, cffHlineto, cffVlineto, cffRrcurveto, cffHhcurveto, cffHvcurveto, cffRcurveline, cffRlinecurve, cffVhcurveto, cffVvcurveto, cffFlex, cffHflex, cffHflex1, cffFlex1:
+				// path contruction operators
+				stack = stack[:0]
+			case cff2Blend:
 				// blend
 				if cff.version == 1 {
 					return fmt.Errorf("CFF: unsupported operator %d", b0)
 				}
 				// TODO: blend
-			case 15:
+			case cff2Vsindex:
 				// vsindex
 				if cff.version == 1 {
 					return fmt.Errorf("CFF: unsupported operator %d", b0)
 				}
 				// TODO: vsindex
 			default:
+				// TODO: arithmetic, storage, and conditional operators for CFF version 1?
 				if 256 <= b0 {
 					return fmt.Errorf("%v: unsupported operator 12 %d", table, b0-256)
 				}
@@ -789,6 +530,281 @@ func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, h
 	if cff.version == 1 {
 		return fmt.Errorf("CFF: charstring must end with endchar operator")
 	}
+	return nil
+}
+
+func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, hinting Hinting) error {
+	// x,y are raised to most-significant 16 bits and treat less-significant bits as fraction
+	var x, y int32
+	f /= float64(1 << 16) // correct back
+
+	err := cff.parseCharString(glyphID, func(_ *BinaryReader, b0 int32, stack []int32) error {
+		switch b0 {
+		case cffRmoveto:
+			if len(stack) != 2 {
+				return ErrBadNumOperands
+			}
+			x += stack[0]
+			y += stack[1]
+			p.Close()
+			p.MoveTo(x0+f*float64(x), y0+f*float64(y))
+		case cffHmoveto:
+			if len(stack) != 1 {
+				return ErrBadNumOperands
+			}
+			x += stack[0]
+			p.Close()
+			p.MoveTo(x0+f*float64(x), y0+f*float64(y))
+		case cffVmoveto:
+			if len(stack) != 1 {
+				return ErrBadNumOperands
+			}
+			y += stack[0]
+			p.Close()
+			p.MoveTo(x0+f*float64(x), y0+f*float64(y))
+		case cffRlineto:
+			if len(stack) == 0 || len(stack)%2 != 0 {
+				return ErrBadNumOperands
+			}
+			for i := 0; i < len(stack); i += 2 {
+				x += stack[i+0]
+				y += stack[i+1]
+				p.LineTo(x0+f*float64(x), y0+f*float64(y))
+			}
+		case cffHlineto, cffVlineto:
+			if len(stack) == 0 {
+				return ErrBadNumOperands
+			}
+			vertical := b0 == cffVlineto
+			for i := 0; i < len(stack); i++ {
+				if !vertical {
+					x += stack[i]
+				} else {
+					y += stack[i]
+				}
+				p.LineTo(x0+f*float64(x), y0+f*float64(y))
+				vertical = !vertical
+			}
+		case cffRrcurveto:
+			if len(stack) == 0 || len(stack)%6 != 0 {
+				return ErrBadNumOperands
+			}
+			for i := 0; i < len(stack); i += 6 {
+				x += stack[i+0]
+				y += stack[i+1]
+				cpx1, cpy1 := x, y
+				x += stack[i+2]
+				y += stack[i+3]
+				cpx2, cpy2 := x, y
+				x += stack[i+4]
+				y += stack[i+5]
+				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+			}
+		case cffHhcurveto, cffVvcurveto:
+			if len(stack) < 4 || len(stack)%4 != 0 && (len(stack)-1)%4 != 0 {
+				return ErrBadNumOperands
+			}
+			vertical := b0 == cffVvcurveto
+			i := 0
+			if len(stack)%4 == 1 {
+				if !vertical {
+					y += stack[0]
+				} else {
+					x += stack[0]
+				}
+				i++
+			}
+			for ; i < len(stack); i += 4 {
+				if !vertical {
+					x += stack[i+0]
+				} else {
+					y += stack[i+0]
+				}
+				cpx1, cpy1 := x, y
+				x += stack[i+1]
+				y += stack[i+2]
+				cpx2, cpy2 := x, y
+				if !vertical {
+					x += stack[i+3]
+				} else {
+					y += stack[i+3]
+				}
+				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+			}
+		case cffHvcurveto, cffVhcurveto:
+			if len(stack) < 4 || len(stack)%4 != 0 && (len(stack)-1)%4 != 0 {
+				return ErrBadNumOperands
+			}
+			vertical := b0 == cffVhcurveto
+			for i := 0; i < len(stack); i += 4 {
+				if !vertical {
+					x += stack[i+0]
+				} else {
+					y += stack[i+0]
+				}
+				cpx1, cpy1 := x, y
+				x += stack[i+1]
+				y += stack[i+2]
+				cpx2, cpy2 := x, y
+				if !vertical {
+					y += stack[i+3]
+				} else {
+					x += stack[i+3]
+				}
+				if i+5 == len(stack) {
+					if !vertical {
+						x += stack[i+4]
+					} else {
+						y += stack[i+4]
+					}
+					i++
+				}
+				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+				vertical = !vertical
+			}
+		case cffRcurveline:
+			if len(stack) < 2 || (len(stack)-2)%6 != 0 {
+				return ErrBadNumOperands
+			}
+			i := 0
+			for ; i < len(stack)-2; i += 6 {
+				x += stack[i+0]
+				y += stack[i+1]
+				cpx1, cpy1 := x, y
+				x += stack[i+2]
+				y += stack[i+3]
+				cpx2, cpy2 := x, y
+				x += stack[i+4]
+				y += stack[i+5]
+				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+			}
+			x += stack[i+0]
+			y += stack[i+1]
+			p.LineTo(x0+f*float64(x), y0+f*float64(y))
+		case cffRlinecurve:
+			if len(stack) < 6 || (len(stack)-6)%2 != 0 {
+				return ErrBadNumOperands
+			}
+			i := 0
+			for ; i < len(stack)-6; i += 2 {
+				x += stack[i+0]
+				y += stack[i+1]
+				p.LineTo(x0+f*float64(x), y0+f*float64(y))
+			}
+			x += stack[i+0]
+			y += stack[i+1]
+			cpx1, cpy1 := x, y
+			x += stack[i+2]
+			y += stack[i+3]
+			cpx2, cpy2 := x, y
+			x += stack[i+4]
+			y += stack[i+5]
+			p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+		case cffFlex:
+			if len(stack) != 13 {
+				return ErrBadNumOperands
+			}
+			// always use cubic Béziers
+			for i := 0; i < 12; i += 6 {
+				x += stack[i+0]
+				y += stack[i+1]
+				cpx1, cpy1 := x, y
+				x += stack[i+2]
+				y += stack[i+3]
+				cpx2, cpy2 := x, y
+				x += stack[i+4]
+				y += stack[i+5]
+				p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+			}
+		case cffHflex:
+			// hflex
+			if len(stack) != 7 {
+				return ErrBadNumOperands
+			}
+			// always use cubic Béziers
+			y1 := y
+			x += stack[0]
+			cpx1, cpy1 := x, y
+			x += stack[1]
+			y += stack[2]
+			cpx2, cpy2 := x, y
+			x += stack[3]
+			p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+
+			x += stack[4]
+			cpx1, cpy1 = x, y
+			x += stack[5]
+			y = y1
+			cpx2, cpy2 = x, y
+			x += stack[6]
+			p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+		case cffHflex1:
+			if len(stack) != 9 {
+				return ErrBadNumOperands
+			}
+			// always use cubic Béziers
+			y1 := y
+			x += stack[0]
+			y += stack[1]
+			cpx1, cpy1 := x, y
+			x += stack[2]
+			y += stack[3]
+			cpx2, cpy2 := x, y
+			x += stack[4]
+			p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+
+			x += stack[5]
+			cpx1, cpy1 = x, y
+			x += stack[6]
+			y += stack[7]
+			cpx2, cpy2 = x, y
+			x += stack[8]
+			y = y1
+			p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+		case cffFlex1:
+			if len(stack) != 11 {
+				return ErrBadNumOperands
+			}
+			// always use cubic Béziers
+			x1, y1 := x, y
+			x += stack[0]
+			y += stack[1]
+			cpx1, cpy1 := x, y
+			x += stack[2]
+			y += stack[3]
+			cpx2, cpy2 := x, y
+			x += stack[4]
+			y += stack[5]
+			p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+
+			x += stack[6]
+			y += stack[7]
+			cpx1, cpy1 = x, y
+			x += stack[8]
+			y += stack[9]
+			cpx2, cpy2 = x, y
+			dx, dy := x-x1, y-y1
+			if dx < 0 {
+				dx = -dx
+			}
+			if dy < 0 {
+				dy = -dy
+			}
+			if dy < dx {
+				x += stack[10]
+				y = y1
+			} else {
+				x = x1
+				y += stack[10]
+			}
+			p.CubeTo(x0+f*float64(cpx1), y0+f*float64(cpy1), x0+f*float64(cpx2), y0+f*float64(cpy2), x0+f*float64(x), y0+f*float64(y))
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
 	p.Close()
 	return nil
 }
@@ -814,267 +830,244 @@ func cffNumberSize(i int) int {
 	return 5
 }
 
-func cffUpdateSubrs(index *cffINDEX, localSubrsMap, globalSubrsMap map[int32]int32, localSubrsOrigLen, globalSubrsOrigLen int) {
-	localSubrsBias := int32(cffCharStringSubrsBias(len(localSubrsMap)))
-	globalSubrsBias := int32(cffCharStringSubrsBias(len(globalSubrsMap)))
+type cffSubrIndexChange struct {
+	start, end uint32
+	index      int32
+}
 
-	k := 1                          // on index.offset
-	var offset, shrunk uint32       // on index.data
-	var posNumber, lenNumber uint32 // last number on stack (the subrs index)
-	r := NewBinaryReader(index.data)
-	for {
-		if r.Len() == 0 {
-			break
+// updateSubrs changes all indices to local and global subroutines given the mappings for both
+func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, localSubrs, globalSubrs *cffINDEX) error {
+	if 1 < len(cff.fonts.localSubrs) {
+		return fmt.Errorf("only single-font CFFs are supported")
+	} else if len(localSubrsMap) == 0 && len(globalSubrsMap) == 0 {
+		return nil
+	}
+
+	oldLocalSubrsLen := 0
+	if 0 < len(cff.fonts.localSubrs) {
+		oldLocalSubrsLen = cff.fonts.localSubrs[0].Len()
+	}
+	oldGlobalSubrsLen := cff.globalSubrs.Len()
+	oldLocalSubrsBias := int32(cffCharStringSubrsBias(oldLocalSubrsLen))
+	oldGlobalSubrsBias := int32(cffCharStringSubrsBias(oldGlobalSubrsLen))
+
+	localSubrsHandled := map[int32]bool{}  // old indices
+	globalSubrsHandled := map[int32]bool{} // old indices
+	localSubrsBias := int32(cffCharStringSubrsBias(localSubrs.Len()))
+	globalSubrsBias := int32(cffCharStringSubrsBias(globalSubrs.Len()))
+
+	indexChanges := map[*cffINDEX][]cffSubrIndexChange{}
+	var indexStack []*cffINDEX
+	var offsetStack []uint32
+
+	numGlyphs := uint16(cff.charStrings.Len())
+	for glyphID := uint16(0); glyphID < numGlyphs; glyphID++ {
+		// Change subroutine indices in the BinaryReader, this will make parseCharString use the
+		// new index to pick the right subroutine. localSubrs and globalSubrs must thus already
+		// have the new order/content.
+		skipDepth := 0
+		indexStack = append(indexStack[:0], cff.charStrings)
+		offsetStack = append(offsetStack[:0], cff.charStrings.offset[glyphID])
+		err := cff.parseCharString(glyphID, func(r *BinaryReader, b0 int32, stack []int32) error {
+			if b0 == cffCallsubr || b0 == cffCallgsubr {
+				if len(stack) == 0 {
+					return ErrBadNumOperands
+				}
+
+				num := stack[len(stack)-1]
+				oldIndex, _, err := cff.getSubroutine(glyphID, b0, num)
+				if err != nil {
+					return err
+				}
+
+				mapped := true
+				var oldBias int32
+				var newIndex, newBias int32
+				if b0 == cffCallsubr {
+					if _, ok := localSubrsMap[oldIndex]; !ok {
+						mapped = false
+					}
+					oldBias = oldLocalSubrsBias
+					newIndex = localSubrsMap[oldIndex]
+					newBias = localSubrsBias
+				} else if b0 == cffCallgsubr {
+					if _, ok := globalSubrsMap[oldIndex]; !ok {
+						mapped = false
+					}
+					oldBias = oldGlobalSubrsBias
+					newIndex = globalSubrsMap[oldIndex]
+					newBias = globalSubrsBias
+				}
+
+				if skipDepth == 0 && mapped && oldIndex != newIndex {
+					// create the new charString encoded subrs index number
+					// the INDEX data never grows
+					lenNumber := uint32(cffNumberSize(int(oldIndex - oldBias)))
+					posNumber := r.pos - 1 - lenNumber // -1 as we're past the operator
+
+					index := indexStack[len(indexStack)-1]
+					offset := offsetStack[len(offsetStack)-1]
+					indexChanges[index] = append(indexChanges[index], cffSubrIndexChange{
+						start: offset + posNumber,
+						end:   offset + posNumber + lenNumber,
+						index: newIndex - newBias,
+					})
+				}
+
+				// only update subroutines once
+				if 0 < skipDepth {
+					skipDepth++
+					return nil
+				} else if b0 == cffCallsubr {
+					if localSubrsHandled[oldIndex] {
+						skipDepth++
+						return nil
+					} else {
+						localSubrsHandled[oldIndex] = true
+					}
+				} else {
+					if globalSubrsHandled[oldIndex] {
+						skipDepth++
+						return nil
+					} else {
+						globalSubrsHandled[oldIndex] = true
+					}
+				}
+
+				var index *cffINDEX
+				if b0 == cffCallsubr {
+					index = localSubrs
+				} else {
+					index = globalSubrs
+				}
+				indexStack = append(indexStack, index)
+				offsetStack = append(offsetStack, index.offset[newIndex])
+			} else if b0 == cffReturn {
+				if 0 < skipDepth {
+					skipDepth--
+					return nil
+				}
+				indexStack = indexStack[:len(indexStack)-1]
+				offsetStack = offsetStack[:len(offsetStack)-1]
+			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
+	}
 
-		b0 := int32(r.ReadUint8())
-		if b0 == 12 {
-			b0 = 256 + int32(r.ReadUint8())
-		}
-		if 32 <= b0 || b0 == 28 {
-			lenNumber = 1
-			if b0 == 28 {
-				lenNumber = 3
-			} else if b0 == 255 {
-				lenNumber = 5
-			} else if 247 <= b0 {
-				lenNumber = 2
+	for index, changes := range indexChanges {
+		sort.Slice(changes, func(i, j int) bool {
+			return changes[i].start < changes[j].start
+		})
+
+		k := 1              // index into index.offset
+		offset := uint32(0) // index into index.data
+		shrunk := uint32(0) // total number of bytes shrunk
+		for _, ch := range changes {
+			// update index.offset upto the current change
+			for k < len(index.offset) && index.offset[k] <= ch.start {
+				index.offset[k] -= shrunk
+				k++
 			}
-			r.ReadBytes(lenNumber - 1)
-			posNumber = r.pos - lenNumber
-		} else if b0 == 10 || b0 == 29 {
-			if lenNumber == 0 {
-				continue
-			} else if b0 == 10 && localSubrsMap == nil || b0 == 29 && globalSubrsMap == nil {
-				continue
+			if 0 < shrunk {
+				// move bytes before current change
+				copy(index.data[offset-shrunk:], index.data[offset:ch.start])
 			}
 
-			// get last number (only works for valid charstrings)
-			stack := index.data[posNumber : posNumber+lenNumber]
-			stack2 := make([]byte, len(stack))
-			copy(stack2, stack)
-			num := cffReadCharStringNumber(NewBinaryReader(stack[1:]), int32(stack[0]))
-
-			// get original index number
-			n := 0
-			if b0 == 10 {
-				n = localSubrsOrigLen
-			} else {
-				n = globalSubrsOrigLen
-			}
-			i := num >> 16
-			if n < 1240 {
-				i += 107
-			} else if n < 33900 {
-				i += 1131
-			} else {
-				i += 32768
-			}
-			if i < 0 || math.MaxUint16 < i {
-				continue
-			}
-
-			// create the new charString encoded subrs index number
-			// the INDEX data never grows
-			var j int32
-			if b0 == 10 {
-				j = localSubrsMap[i] - localSubrsBias
-			} else if b0 == 29 {
-				j = globalSubrsMap[i] - globalSubrsBias
-			}
-			wNum := &BinaryWriter{index.data[posNumber:posNumber:len(index.data)]}
-			if -107 <= j && j <= 107 {
-				wNum.WriteUint8(uint8(j + 139))
-			} else if 108 <= j && j <= 1131 {
-				j -= 108
-				wNum.WriteUint8(uint8(j/256 + 247))
-				wNum.WriteUint8(uint8(j % 256))
-			} else if -1131 <= j && j <= -108 {
-				j = -j - 108
-				wNum.WriteUint8(uint8(j/256 + 251))
-				wNum.WriteUint8(uint8(j % 256))
-			} else if -32768 <= j && j <= 32767 {
+			// write new number
+			wNum := &BinaryWriter{index.data[ch.start-shrunk : ch.start-shrunk]}
+			if -107 <= ch.index && ch.index <= 107 {
+				wNum.WriteUint8(uint8(ch.index + 139))
+			} else if 108 <= ch.index && ch.index <= 1131 {
+				ch.index -= 108
+				wNum.WriteUint8(uint8(ch.index/256 + 247))
+				wNum.WriteUint8(uint8(ch.index % 256))
+			} else if -1131 <= ch.index && ch.index <= -108 {
+				ch.index = -ch.index - 108
+				wNum.WriteUint8(uint8(ch.index/256 + 251))
+				wNum.WriteUint8(uint8(ch.index % 256))
+			} else if -32768 <= ch.index && ch.index <= 32767 {
 				wNum.WriteUint8(28)
-				wNum.WriteUint16(uint16(j))
+				wNum.WriteUint16(uint16(ch.index))
 			} else {
 				wNum.WriteUint8(255)
-				wNum.WriteUint32(uint32(j << 16)) // is Fixed with 16-bit fraction
+				wNum.WriteUint32(uint32(ch.index << 16)) // is Fixed with 16-bit fraction
 			}
 
-			// update INDEX
-			shrink := lenNumber - wNum.Len()
-			if 0 < shrink {
-				// update offsets
-				end := posNumber + lenNumber - shrink
-				for k < len(index.offset) && index.offset[k] < end {
-					index.offset[k] -= shrunk
-					k++
-				}
-				// move chunk forward
-				if 0 < shrunk {
-					copy(index.data[offset-shrunk:], index.data[offset:end])
-				}
-				shrunk += shrink
-				offset = posNumber + lenNumber
-			} else if shrink < 0 {
-				panic("INDEX must not grow")
+			offset = ch.end
+			shrunk += (ch.end - ch.start) - wNum.Len()
+		}
+		if 0 < shrunk {
+			// update index.offset upto the current change
+			for k < len(index.offset) {
+				index.offset[k] -= shrunk
+				k++
 			}
+			// move bytes before current change
+			copy(index.data[offset-shrunk:], index.data[offset:])
+			index.data = index.data[:uint32(len(index.data))-shrunk]
 		}
 	}
 
-	if 0 < shrunk {
-		// update offsets
-		for k < len(index.offset) {
-			index.offset[k] -= shrunk
-			k++
-		}
-
-		// move chunk forward
-		copy(index.data[offset-shrunk:], index.data[offset:])
-		index.data = index.data[:uint32(len(index.data))-shrunk]
-	}
+	// set new Subrs INDEX, charStrings already modified
+	cff.globalSubrs = globalSubrs
+	cff.fonts.localSubrs = []*cffINDEX{localSubrs}
+	return nil
 }
 
 // reindex subroutines in the order in which they appear and rearrange the global and local subroutines INDEX
 func (cff *cffTable) OptimizeSubrs() error {
 	if 1 < len(cff.fonts.localSubrs) {
-		return fmt.Errorf("must contain only one font")
+		return fmt.Errorf("only single-font CFFs are supported")
 	}
 
-	table := "CFF"
-	if cff.version == 2 {
-		table = "CFF2"
-	}
-
-	localSubrsLen, globalSubrsLen := 0, cff.globalSubrs.Len()
-	if 0 < len(cff.fonts.localSubrs) {
-		localSubrsLen = cff.fonts.localSubrs[0].Len()
-	}
-
-	// construct new Subrs INDEX
+	// construct subroutine index mapping
 	localSubrs := &cffINDEX{}          // new INDEX
 	globalSubrs := &cffINDEX{}         // new INDEX
 	var localSubrsMap map[int32]int32  // old to new index
 	var globalSubrsMap map[int32]int32 // old to new index
-	numGlyphID := uint16(cff.charStrings.Len())
-	for glyphID := uint16(0); glyphID < numGlyphID; glyphID++ {
-		charString := cff.charStrings.Get(glyphID)
-		if charString == nil {
-			return fmt.Errorf("%v: bad glyphID %v", table, glyphID)
-		} else if 65525 < len(charString) {
-			return fmt.Errorf("%v: charstring too long", table)
-		}
-
-		var posNumber, lenNumber uint32
-		callStack := []*BinaryReader{}
-		r := NewBinaryReader(charString)
-		for {
-			if cff.version == 2 && r.Len() == 0 && 0 < len(callStack) {
-				// end of subroutine
-				r = callStack[len(callStack)-1]
-				callStack = callStack[:len(callStack)-1]
-				continue
-			} else if r.Len() == 0 {
-				break
-			}
-
-			b0 := int32(r.ReadUint8())
-			if b0 == 12 {
-				b0 = 256 + int32(r.ReadUint8())
-			}
-			if 32 <= b0 || b0 == 28 {
-				lenNumber = 1
-				if b0 == 28 {
-					lenNumber = 3
-				} else if b0 == 255 {
-					lenNumber = 5
-				} else if 247 <= b0 {
-					lenNumber = 2
-				}
-				r.ReadBytes(lenNumber - 1)
-				posNumber = r.pos - lenNumber
-			} else if b0 == 10 || b0 == 29 {
-				// callsubrs and callgsubrs
-				if 10 < len(callStack) {
-					return fmt.Errorf("%v: too many nested subroutines", table)
-				} else if lenNumber == 0 {
-					return fmt.Errorf("%v: bad number of operands for operator", table)
+	numGlyphs := uint16(cff.charStrings.Len())
+	for glyphID := uint16(0); glyphID < numGlyphs; glyphID++ {
+		err := cff.parseCharString(glyphID, func(_ *BinaryReader, b0 int32, stack []int32) error {
+			if b0 == cffCallsubr || b0 == cffCallgsubr {
+				if len(stack) == 0 {
+					return ErrBadNumOperands
 				}
 
-				// get last number (only works for valid charstrings)
-				stack := r.buf[posNumber : posNumber+lenNumber]
-				num := cffReadCharStringNumber(NewBinaryReader(stack[1:]), int32(stack[0]))
-
-				n := 0
-				if b0 == 10 {
-					n = localSubrsLen
-				} else {
-					n = globalSubrsLen
-				}
-				i := num >> 16
-				if n < 1240 {
-					i += 107
-				} else if n < 33900 {
-					i += 1131
-				} else {
-					i += 32768
-				}
-				if i < 0 || math.MaxUint16 < i {
-					return fmt.Errorf("%v: bad subroutine", table)
+				oldIndex, subr, err := cff.getSubroutine(glyphID, b0, stack[len(stack)-1])
+				if err != nil {
+					return err
 				}
 
-				var subr []byte
-				if b0 == 10 {
-					subr = cff.fonts.localSubrs[0].Get(uint16(i))
+				if b0 == cffCallsubr {
 					if localSubrsMap == nil {
 						localSubrsMap = map[int32]int32{}
 					}
-					if _, ok := localSubrsMap[i]; !ok {
-						localSubrsMap[i] = int32(localSubrs.Len())
-						localSubrs.Add(subr) // copies data
+					if _, ok := localSubrsMap[oldIndex]; !ok {
+						newIndex := localSubrs.Add(subr) // copies data
+						localSubrsMap[oldIndex] = int32(newIndex)
 					}
 				} else {
-					subr = cff.globalSubrs.Get(uint16(i))
 					if globalSubrsMap == nil {
 						globalSubrsMap = map[int32]int32{}
 					}
-					if _, ok := globalSubrsMap[i]; !ok {
-						globalSubrsMap[i] = int32(globalSubrs.Len())
-						globalSubrs.Add(subr) // copies data
+					if _, ok := globalSubrsMap[oldIndex]; !ok {
+						newIndex := globalSubrs.Add(subr) // copies data
+						globalSubrsMap[oldIndex] = int32(newIndex)
 					}
 				}
-
-				if subr == nil {
-					return fmt.Errorf("%v: bad subroutine", table)
-				} else if 65525 < len(charString) {
-					return fmt.Errorf("%v: subroutine too long", table)
-				}
-				callStack = append(callStack, r)
-				r = NewBinaryReader(subr)
-			} else if b0 == 11 {
-				// return
-				if cff.version == 2 {
-					return fmt.Errorf("%v: unsupported operator %d", table, b0)
-				} else if len(callStack) == 0 {
-					return fmt.Errorf("%v: bad return", table)
-				}
-				r = callStack[len(callStack)-1]
-				callStack = callStack[:len(callStack)-1]
 			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 
-	// update subrs indices in charstrings
-	cffUpdateSubrs(cff.charStrings, localSubrsMap, globalSubrsMap, localSubrsLen, globalSubrsLen)
-	cffUpdateSubrs(localSubrs, localSubrsMap, globalSubrsMap, localSubrsLen, globalSubrsLen)
-	cffUpdateSubrs(globalSubrs, localSubrsMap, globalSubrsMap, localSubrsLen, globalSubrsLen)
-
-	// set new Subrs INDEX
-	cff.globalSubrs = globalSubrs
-	if 0 < len(cff.fonts.localSubrs) {
-		cff.fonts.localSubrs = []*cffINDEX{localSubrs}
-	}
-	return nil
+	// update subrs indices in charStrings for all glyphs and their subroutines
+	return cff.updateSubrs(localSubrsMap, globalSubrsMap, localSubrs, globalSubrs)
 }
 
 type cffINDEX struct {
@@ -1089,9 +1082,20 @@ func (t *cffINDEX) Len() int {
 	return len(t.offset) - 1
 }
 
+func (t *cffINDEX) Copy() *cffINDEX {
+	offset := make([]uint32, len(t.offset))
+	data := make([]byte, len(t.data))
+	copy(offset, t.offset)
+	copy(data, t.data)
+	return &cffINDEX{
+		offset: offset,
+		data:   data,
+	}
+}
+
 func (t *cffINDEX) Get(i uint16) []byte {
 	if int(i) < t.Len() {
-		return t.data[t.offset[i]:t.offset[i+1]]
+		return t.data[t.offset[i]:t.offset[i+1]:t.offset[i+1]]
 	}
 	return nil
 }
@@ -1924,7 +1928,7 @@ func (t *cffFontINDEX) Index(glyphID uint32) (uint16, bool) {
 			return 0, false
 		}
 		return uint16(t.fds[glyphID]), true
-	} else if t.first[len(t.first)-1] <= glyphID {
+	} else if len(t.first) == 0 || t.first[len(t.first)-1] <= glyphID {
 		return 0, false
 	}
 
@@ -1932,23 +1936,28 @@ func (t *cffFontINDEX) Index(glyphID uint32) (uint16, bool) {
 	for t.first[i+1] <= glyphID {
 		i++
 	}
+	if len(t.fd) < i {
+		return 0, false
+	}
 	return t.fd[i], true
 }
 
-func (t *cffFontINDEX) GetPrivate(glyphID uint32) (*cffPrivateDICT, error) {
-	i, ok := t.Index(glyphID)
+// GetPrivate returns the Private DICT for the glyph's font, or nil if the font has none.
+func (t *cffFontINDEX) GetPrivate(glyphID uint16) *cffPrivateDICT {
+	i, ok := t.Index(uint32(glyphID))
 	if !ok {
-		return nil, fmt.Errorf("bad glyph ID %v", glyphID)
+		return nil
 	}
-	return t.private[i], nil
+	return t.private[i]
 }
 
-func (t *cffFontINDEX) GetLocalSubrs(glyphID uint32) (*cffINDEX, error) {
-	i, ok := t.Index(glyphID)
+// GetLocalSubrs returns the LocalSubrs INDEX for the glyph's font, or nil if the font has none.
+func (t *cffFontINDEX) GetLocalSubrs(glyphID uint16) *cffINDEX {
+	i, ok := t.Index(uint32(glyphID))
 	if !ok {
-		return nil, fmt.Errorf("bad glyph ID %v", glyphID)
+		return nil
 	}
-	return t.localSubrs[i], nil
+	return t.localSubrs[i]
 }
 
 func parseFontINDEX(b []byte, fdArray, fdSelect, nGlyphs int, isCFF2 bool) (*cffFontINDEX, error) {
@@ -2076,6 +2085,9 @@ func (cff *cffTable) Write() ([]byte, error) {
 	w.WriteBytes(nameINDEX)
 
 	strings := &cffINDEX{}
+	if cff.top == nil {
+		cff.top = &cffTopDICT{}
+	}
 	topDICT, err := cff.top.Write(strings)
 	if err != nil {
 		return nil, fmt.Errorf("Top DICT: %v", err)
@@ -2085,6 +2097,10 @@ func (cff *cffTable) Write() ([]byte, error) {
 	if cff.charset != nil {
 		first := strings.Len()
 		numGlyphs := cff.charStrings.Len()
+		if len(cff.charset) != numGlyphs {
+			return nil, fmt.Errorf("charset length must match number of glyphs")
+		}
+
 		charset = NewBinaryWriter([]byte{})
 		if 257 < numGlyphs {
 			// format 2
@@ -2107,11 +2123,17 @@ func (cff *cffTable) Write() ([]byte, error) {
 		return nil, fmt.Errorf("String INDEX: %v", err)
 	}
 
+	if cff.globalSubrs == nil {
+		cff.globalSubrs = &cffINDEX{}
+	}
 	globalSubrsINDEX, err := cff.globalSubrs.Write()
 	if err != nil {
 		return nil, fmt.Errorf("Global Subrs INDEX: %v", err)
 	}
 
+	if cff.charStrings == nil {
+		cff.charStrings = &cffINDEX{}
+	}
 	charStringsINDEX, err := cff.charStrings.Write()
 	if err != nil {
 		return nil, fmt.Errorf("CharStrings INDEX: %v", err)
@@ -2120,6 +2142,9 @@ func (cff *cffTable) Write() ([]byte, error) {
 	var privateDICT []byte
 	var localSubrsINDEX []byte
 	localSubrsOffset := 0
+	if cff.fonts == nil {
+		cff.fonts = &cffFontINDEX{}
+	}
 	if len(cff.fonts.private) != 0 {
 		privateDICT, err = cff.fonts.private[0].Write()
 		if err != nil {
