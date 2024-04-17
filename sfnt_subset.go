@@ -150,7 +150,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 
 			sfnt.Tables[tag] = cmapWriteFormat12(rs, runeMap)
 			if err := sfnt.parseCmap(); err != nil {
-				return nil, fmt.Errorf("invalid cmap table: %w", err)
+				return nil, err
 			}
 		case "CFF ":
 			cff := *sfntOld.CFF
@@ -164,7 +164,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 
 				charString := sfntOld.CFF.charStrings.Get(glyphID)
 				if charString == nil {
-					return nil, fmt.Errorf(fmt.Sprintf("bad charString for glyph %v", glyphID))
+					return nil, fmt.Errorf("CFF: bad charString for glyph %v", glyphID)
 				}
 				cff.charStrings.Add(charString) // copies data
 			}
@@ -179,12 +179,12 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 
 			// trim globalSubrs and localSubrs INDEX
 			if err := cff.OptimizeSubrs(); err != nil {
-				return nil, fmt.Errorf("invalid CFF table: %w", err)
+				return nil, err
 			}
 
 			b, err := cff.Write()
 			if err != nil {
-				return nil, fmt.Errorf("invalid CFF table: %w", err)
+				return nil, err
 			}
 			sfnt.Tables[tag] = b
 			sfnt.CFF = &cff
@@ -487,7 +487,7 @@ func (sfnt *SFNT) SetGlyphNames(names []string) error {
 		sfnt.CFF.charset = names
 		b, err := sfnt.CFF.Write()
 		if err != nil {
-			return fmt.Errorf("invalid CFF table: %w", err.Error())
+			return err
 		}
 		sfnt.Tables["CFF "] = b
 		return nil
@@ -523,7 +523,7 @@ func (sfnt *SFNT) SetGlyphNames(names []string) error {
 
 	b, err := sfnt.Post.Write()
 	if err != nil {
-		return fmt.Errorf("invalid post table: %v", err)
+		return err
 	}
 
 	sfnt.Tables["post"] = b
