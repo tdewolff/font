@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/tdewolff/canvas"
 	"github.com/tdewolff/font"
@@ -20,7 +21,8 @@ import (
 type Show struct {
 	Index   int     `short:"i" desc:"Font index for font collections"`
 	GlyphID uint16  `short:"g" name:"glyph" desc:"Glyph ID"`
-	Char    string  `short:"c" desc:"Unicode character"`
+	Char    string  `short:"c" desc:"Literal character"`
+	Unicode string  `short:"u" desc:"Unicode codepoint"`
 	Width   int     `desc:"Image width"`
 	PPEM    uint16  `default:"40" desc:"Pixels per em-square"`
 	Scale   int     `default:"4" desc:"Image scale"`
@@ -45,9 +47,20 @@ func (cmd *Show) Run() error {
 	if cmd.Char != "" {
 		rs := []rune(cmd.Char)
 		if len(rs) != 1 {
-			return fmt.Errorf("char must be one Unicode character")
+			return fmt.Errorf("char must be one character")
 		}
 		cmd.GlyphID = sfnt.GlyphIndex(rs[0])
+	} else if cmd.Unicode != "" {
+		codepoint, err := strconv.ParseInt(cmd.Unicode, 16, 32)
+		if err != nil {
+			return fmt.Errorf("invalid unicode codepoint: %v", err)
+		} else if codepoint < 0 {
+			return fmt.Errorf("invalid unicode codepoint: U+%4X\n", codepoint)
+		}
+		cmd.GlyphID = sfnt.GlyphIndex(rune(codepoint))
+		if cmd.GlyphID == 0 {
+			return fmt.Errorf("glyph not found for U+%4X\n", codepoint)
+		}
 	}
 	fmt.Println("GlyphID:", cmd.GlyphID)
 	fmt.Printf("Char: %v (%v)\n", printableRune(sfnt.Cmap.ToUnicode(cmd.GlyphID)), sfnt.Cmap.ToUnicode(cmd.GlyphID))

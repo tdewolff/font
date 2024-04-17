@@ -10,13 +10,13 @@ import (
 )
 
 type Merge struct {
-	Quiet        bool     `short:"q" desc:"Suppress output except for errors."`
-	Force        bool     `short:"f" desc:"Force overwriting existing files."`
-	Type         string   `short:"t" desc:"Explicitly set output mimetype, eg. font/woff2."`
-	Encoding     string   `short:"e" desc:"Output encoding, either empty of base64."`
-	IdentityCmap bool     `desc:"Set unicode to glyph map to be the identity (i.e. glyph ID equals unicode codepoint)."`
-	Outputs      []string `short:"o" desc:"Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported). Can output multiple file."`
-	Inputs       []string `index:"*" desc:"Input font files."`
+	Quiet         bool     `short:"q" desc:"Suppress output except for errors."`
+	Force         bool     `short:"f" desc:"Force overwriting existing files."`
+	Type          string   `short:"t" desc:"Explicitly set output mimetype, eg. font/woff2."`
+	Encoding      string   `short:"e" desc:"Output encoding, either empty of base64."`
+	RearrangeCmap bool     `desc:"Rearrange glyph unicode mapping, assigning a sequential codepoint for each glyph in order starting at 33 (exclamation)."`
+	Outputs       []string `short:"o" desc:"Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported). Can output multiple file."`
+	Inputs        []string `index:"*" desc:"Input font files."`
 }
 
 func (cmd *Merge) Run() error {
@@ -40,13 +40,19 @@ func (cmd *Merge) Run() error {
 
 	for _, input := range cmd.Inputs[1:] {
 		options := font.MergeOptions{
-			IdentityCmap: cmd.IdentityCmap,
+			RearrangeCmap: cmd.RearrangeCmap,
 		}
 		sfnt2, _, rLen2, err := readFont(input, 0)
 		if err != nil {
-			return err
+			if input == "-" {
+				return err
+			}
+			return fmt.Errorf("%v: %v", input, err)
 		} else if err := sfnt.Merge(sfnt2, options); err != nil {
-			return err
+			if input == "-" {
+				return err
+			}
+			return fmt.Errorf("%v: %v", input, err)
 		}
 		rLen += rLen2
 	}

@@ -43,7 +43,10 @@ func (cmd *Subset) Run() error {
 	// read from file and parse font
 	sfnt, rMimetype, rLen, err := readFont(cmd.Input, cmd.Index)
 	if err != nil {
-		return err
+		if cmd.Input == "-" {
+			return err
+		}
+		return fmt.Errorf("%v: %v", cmd.Input, err)
 	}
 
 	glyphMap := map[uint16]bool{}
@@ -207,6 +210,12 @@ func (cmd *Subset) Run() error {
 	// subset font
 	numGlyphs := sfnt.NumGlyphs()
 	sfntSubset, err := sfnt.Subset(glyphIDs, font.SubsetOptions{Tables: font.KeepMinTables})
+	if err != nil {
+		if cmd.Input == "-" {
+			return err
+		}
+		return fmt.Errorf("%v: %v", cmd.Input, err)
+	}
 
 	// set glyph names
 	if cmd.GlyphName != "" {
