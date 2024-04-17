@@ -160,7 +160,7 @@ func TestWOFF2ValidationFormat(t *testing.T) {
 		{"directory-table-order-001", ""},
 		{"directory-table-order-002", "loca: must come after glyf table"},
 		{"tabledata-extraneous-data-001", "sum of table lengths must match decompressed font data size"},
-		{"tabledata-brotli-001", "brotli: corrupted input"},
+		{"tabledata-brotli-001", "brotli: PADDING_1"},
 		{"tabledata-decompressed-length-001", "sum of table lengths must match decompressed font data size"},
 		{"tabledata-decompressed-length-002", "sum of table lengths must match decompressed font data size"},
 		{"tabledata-decompressed-length-003", "sum of table lengths must match decompressed font data size"},

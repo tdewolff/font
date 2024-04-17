@@ -170,7 +170,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	rBrotli := brotli.NewReader(bytes.NewReader(compData)) // err is always nil
 	dataBuf := bytes.NewBuffer(make([]byte, 0, uncompressedSize))
 	if _, err := io.Copy(dataBuf, rBrotli); err != nil {
-		return nil, fmt.Errorf("brotli: corrupted input: %w", err)
+		return nil, err
 	}
 	data := dataBuf.Bytes()
 	if uint32(len(data)) != uncompressedSize {
