@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/tdewolff/parse/v2"
 )
 
 type cmapFormat0 struct {
@@ -149,7 +151,7 @@ func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
 }
 
 func cmapWriteFormat12(rs []rune, runeMap map[rune]uint16) []byte {
-	w := NewBinaryWriter([]byte{})
+	w := parse.NewBinaryWriter([]byte{})
 	w.WriteUint16(0)  // version
 	w.WriteUint16(1)  // numTables
 	w.WriteUint16(0)  // platformID
@@ -192,8 +194,8 @@ func cmapWriteFormat12(rs []rune, runeMap map[rune]uint16) []byte {
 		w.WriteUint32(uint32(startCharCode + n - 1)) // endCharCode
 		w.WriteUint32(uint32(startGlyphID))          // startGlyphID
 
-		binary.BigEndian.PutUint32(w.buf[start+4:], w.Len()-start) // set length
-		binary.BigEndian.PutUint32(w.buf[start+12:], numGroups)    // set numGroups
+		binary.BigEndian.PutUint32(w.Bytes()[start+4:], w.Len()-start) // set length
+		binary.BigEndian.PutUint32(w.Bytes()[start+12:], numGroups)    // set numGroups
 	}
 	return w.Bytes()
 }
@@ -248,7 +250,7 @@ func (sfnt *SFNT) parseCmap() error {
 	}
 
 	sfnt.Cmap = &cmapTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	if r.ReadUint16() != 0 {
 		return fmt.Errorf("cmap: bad version")
 	}
@@ -275,7 +277,7 @@ func (sfnt *SFNT) parseCmap() error {
 		}
 
 		// extract subtable length
-		rs := NewBinaryReader(b[offset:])
+		rs := parse.NewBinaryReader(b[offset:])
 		format := rs.ReadUint16()
 		var length uint32
 		if format == 0 || format == 2 || format == 4 || format == 6 {
@@ -299,7 +301,7 @@ func (sfnt *SFNT) parseCmap() error {
 				return fmt.Errorf("cmap: bad subtable %d", j)
 			}
 		}
-		rs.buf = rs.buf[:length:length]
+		rs = parse.NewBinaryReader(b[offset+rs.Pos() : offset+length : offset+length])
 
 		if subtableID == -1 {
 			subtableID = len(sfnt.Cmap.Subtables)
@@ -308,7 +310,7 @@ func (sfnt *SFNT) parseCmap() error {
 
 			switch format {
 			case 0:
-				if rs.Len() != 258 {
+				if rs.Len() < 258 {
 					return fmt.Errorf("cmap: bad subtable %d", j)
 				}
 				_ = rs.ReadUint16() // languageID

@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+
+	"github.com/tdewolff/parse/v2"
 )
 
 type MergeOptions struct {
@@ -80,7 +82,7 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 
 			// write current offsets
 			glyphID := 0
-			w := NewBinaryWriter(make([]byte, n))
+			w := parse.NewBinaryWriter(make([]byte, 0, n))
 			if indexToLocFormat == sfnt.Loca.Format {
 				w.WriteBytes(loca)
 				glyphID = int(origNumGlyphs)
@@ -274,7 +276,7 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 		sfnt.Hmtx.LeftSideBearings = lsbs[numberOfHMetrics:]
 
 		n := 4*int(numberOfHMetrics) + 2*(int(numGlyphs)-int(numberOfHMetrics))
-		w := NewBinaryWriter(make([]byte, 0, n))
+		w := parse.NewBinaryWriter(make([]byte, 0, n))
 		for glyphID := 0; glyphID < int(numGlyphs); glyphID++ {
 			if glyphID < int(numberOfHMetrics) {
 				sfnt.Hmtx.HMetrics[glyphID].AdvanceWidth = advances[glyphID]

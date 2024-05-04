@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/andybalholm/brotli"
+	"github.com/tdewolff/parse/v2"
 )
 
 // Specification:
@@ -55,7 +56,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 		return nil, ErrInvalidFontData
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	signature := r.ReadString(4)
 	if signature != "wOF2" {
 		return nil, fmt.Errorf("bad signature")
@@ -207,7 +208,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 				return nil, fmt.Errorf("loca: invalid value for origLength")
 			}
 		} else {
-			rGlyf := NewBinaryReader(tables[iGlyf].data)
+			rGlyf := parse.NewBinaryReader(tables[iGlyf].data)
 			_ = rGlyf.ReadUint32() // version
 			numGlyphs := uint32(rGlyf.ReadUint16())
 			indexFormat := rGlyf.ReadUint16()
@@ -279,7 +280,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	if MaxMemory < totalSfntSize {
 		return nil, ErrExceedsMemory
 	}
-	w := NewBinaryWriter(make([]byte, totalSfntSize)) // initial guess, will be bigger
+	w := parse.NewBinaryWriter(make([]byte, 0, totalSfntSize)) // initial guess, will be bigger
 	w.WriteUint32(flavor)
 	w.WriteUint16(numTables)
 	w.WriteUint16(searchRange)
@@ -336,7 +337,7 @@ func signInt16(flag byte, pos uint) int16 {
 // Remarkable! This code was written on a Sunday evening, and after fixing the compiler errors it worked flawlessly!
 // Edit: oops, there was actually a subtle bug fixed in dx of flag < 120 of simple glyphs.
 func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error) {
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	_ = r.ReadUint16() // version
 	optionFlags := r.ReadUint16()
 	numGlyphs := r.ReadUint16()
@@ -353,17 +354,17 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 	}
 
 	bitmapSize := ((uint32(numGlyphs) + 31) >> 5) << 2
-	nContourStream := NewBinaryReader(r.ReadBytes(nContourStreamSize))
-	nPointsStream := NewBinaryReader(r.ReadBytes(nPointsStreamSize))
-	flagStream := NewBinaryReader(r.ReadBytes(flagStreamSize))
-	glyphStream := NewBinaryReader(r.ReadBytes(glyphStreamSize))
-	compositeStream := NewBinaryReader(r.ReadBytes(compositeStreamSize))
-	bboxBitmap := NewBitmapReader(r.ReadBytes(bitmapSize))
-	bboxStream := NewBinaryReader(r.ReadBytes(bboxStreamSize - bitmapSize))
-	instructionStream := NewBinaryReader(r.ReadBytes(instructionStreamSize))
-	var overlapSimpleBitmap *BitmapReader
+	nContourStream := parse.NewBinaryReader(r.ReadBytes(nContourStreamSize))
+	nPointsStream := parse.NewBinaryReader(r.ReadBytes(nPointsStreamSize))
+	flagStream := parse.NewBinaryReader(r.ReadBytes(flagStreamSize))
+	glyphStream := parse.NewBinaryReader(r.ReadBytes(glyphStreamSize))
+	compositeStream := parse.NewBinaryReader(r.ReadBytes(compositeStreamSize))
+	bboxBitmap := parse.NewBitmapReader(r.ReadBytes(bitmapSize))
+	bboxStream := parse.NewBinaryReader(r.ReadBytes(bboxStreamSize - bitmapSize))
+	instructionStream := parse.NewBinaryReader(r.ReadBytes(instructionStreamSize))
+	var overlapSimpleBitmap *parse.BitmapReader
 	if optionFlags&0x0001 != 0 { // overlapSimpleBitmap present
-		overlapSimpleBitmap = NewBitmapReader(r.ReadBytes(bitmapSize))
+		overlapSimpleBitmap = parse.NewBitmapReader(r.ReadBytes(bitmapSize))
 	}
 	if r.EOF() {
 		return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
@@ -377,8 +378,8 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 		return nil, nil, fmt.Errorf("loca: origLength must match numGlyphs+1 entries")
 	}
 
-	w := NewBinaryWriter(make([]byte, 0)) // size unknown
-	loca := NewBinaryWriter(make([]byte, locaLength))
+	w := parse.NewBinaryWriter([]byte{}) // size unknown
+	loca := parse.NewBinaryWriter(make([]byte, 0, locaLength))
 	for iGlyph := uint16(0); iGlyph < numGlyphs; iGlyph++ {
 		if indexFormat == 0 {
 			loca.WriteUint16(uint16(w.Len() >> 1))
@@ -617,7 +618,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 
 func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	// get indexFormat
-	rHead := NewBinaryReader(head)
+	rHead := parse.NewBinaryReader(head)
 	_ = rHead.ReadBytes(50) // skip
 	indexFormat := rHead.ReadInt16()
 	if rHead.EOF() {
@@ -625,7 +626,7 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	}
 
 	// get numGlyphs
-	rMaxp := NewBinaryReader(maxp)
+	rMaxp := parse.NewBinaryReader(maxp)
 	_ = rMaxp.ReadUint32() // version
 	numGlyphs := rMaxp.ReadUint16()
 	if rMaxp.EOF() {
@@ -633,7 +634,7 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	}
 
 	// get numHMetrics
-	rHhea := NewBinaryReader(hhea)
+	rHhea := parse.NewBinaryReader(hhea)
 	_ = rHhea.ReadBytes(34) // skip all but the last header field
 	numHMetrics := rHhea.ReadUint16()
 	if rHhea.EOF() {
@@ -652,9 +653,9 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	if locaLength != uint32(len(loca)) {
 		return nil, ErrInvalidFontData
 	}
-	rLoca := NewBinaryReader(loca)
+	rLoca := parse.NewBinaryReader(loca)
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	flags := r.ReadByte() // flags
 	reconstructProportional := flags&0x01 != 0
 	reconstructMonospaced := flags&0x02 != 0
@@ -691,7 +692,7 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	}
 
 	// extract xMin values from glyf table using loca indices
-	rGlyf := NewBinaryReader(glyf)
+	rGlyf := parse.NewBinaryReader(glyf)
 	iGlyphMin := uint16(0)
 	iGlyphMax := numGlyphs
 	if !reconstructProportional {
@@ -731,7 +732,7 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 		offset = offsetNext
 	}
 
-	w := NewBinaryWriter(make([]byte, 2*numGlyphs+2*numHMetrics))
+	w := parse.NewBinaryWriter(make([]byte, 0, 2*numGlyphs+2*numHMetrics))
 	for iHMetric := uint16(0); iHMetric < numHMetrics; iHMetric++ {
 		w.WriteUint16(advanceWidths[iHMetric])
 		w.WriteInt16(lsbs[iHMetric])
@@ -742,7 +743,7 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func readUintBase128(r *BinaryReader) (uint32, error) {
+func readUintBase128(r *parse.BinaryReader) (uint32, error) {
 	// see https://www.w3.org/TR/WOFF2/#DataTypes
 	var accum uint32
 	for i := 0; i < 5; i++ {
@@ -764,7 +765,7 @@ func readUintBase128(r *BinaryReader) (uint32, error) {
 	return 0, fmt.Errorf("readUintBase128: exceeds 5 bytes")
 }
 
-func read255Uint16(r *BinaryReader) uint16 {
+func read255Uint16(r *parse.BinaryReader) uint16 {
 	// see https://www.w3.org/TR/WOFF2/#DataTypes
 	code := r.ReadByte()
 	if code == 253 {
@@ -779,21 +780,21 @@ func read255Uint16(r *BinaryReader) uint16 {
 }
 
 func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
-	w := NewBinaryWriter(make([]byte, sfnt.Length*6/10)) // estimated size
-	w.WriteString("wOF2")                                // signature
-	w.WriteString(sfnt.Version)                          // flavor
-	w.WriteUint32(0)                                     // length (set later)
-	w.WriteUint16(uint16(len(sfnt.Tables)))              // numTables
-	w.WriteUint16(0)                                     // reserved
-	w.WriteUint32(sfnt.Length)                           // totalSfntSize
-	w.WriteUint32(0)                                     // totalCompressedSize (set later)
-	w.WriteUint16(1)                                     // majorVersion
-	w.WriteUint16(0)                                     // minorVersion
-	w.WriteUint32(0)                                     // metaOffset
-	w.WriteUint32(0)                                     // metaLength
-	w.WriteUint32(0)                                     // metaOrigLength
-	w.WriteUint32(0)                                     // privOffset
-	w.WriteUint32(0)                                     // privLength
+	w := parse.NewBinaryWriter(make([]byte, 0, sfnt.Length*6/10)) // estimated size
+	w.WriteString("wOF2")                                         // signature
+	w.WriteString(sfnt.Version)                                   // flavor
+	w.WriteUint32(0)                                              // length (set later)
+	w.WriteUint16(uint16(len(sfnt.Tables)))                       // numTables
+	w.WriteUint16(0)                                              // reserved
+	w.WriteUint32(sfnt.Length)                                    // totalSfntSize
+	w.WriteUint32(0)                                              // totalCompressedSize (set later)
+	w.WriteUint16(1)                                              // majorVersion
+	w.WriteUint16(0)                                              // minorVersion
+	w.WriteUint32(0)                                              // metaOffset
+	w.WriteUint32(0)                                              // metaLength
+	w.WriteUint32(0)                                              // metaOrigLength
+	w.WriteUint32(0)                                              // privOffset
+	w.WriteUint32(0)                                              // privLength
 
 	tags := make([]string, 0, len(sfnt.Tables))
 	for tag, _ := range sfnt.Tables {
@@ -893,15 +894,15 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 
 func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, []int16) {
 	bitmapSize := ((uint32(numGlyphs) + 31) >> 5) << 2
-	nContourStream := NewBinaryWriter([]byte{})
-	nPointsStream := NewBinaryWriter([]byte{})
-	flagStream := NewBinaryWriter([]byte{})
-	glyphStream := NewBinaryWriter([]byte{})
-	compositeStream := NewBinaryWriter([]byte{})
-	bboxBitmapStream := NewBitmapWriter(make([]byte, bitmapSize))
-	bboxStream := NewBinaryWriter([]byte{})
-	instructionStream := NewBinaryWriter([]byte{})
-	overlapSimpleStream := NewBitmapWriter(make([]byte, bitmapSize))
+	nContourStream := parse.NewBinaryWriter([]byte{})
+	nPointsStream := parse.NewBinaryWriter([]byte{})
+	flagStream := parse.NewBinaryWriter([]byte{})
+	glyphStream := parse.NewBinaryWriter([]byte{})
+	compositeStream := parse.NewBinaryWriter([]byte{})
+	bboxBitmapStream := parse.NewBitmapWriter(make([]byte, bitmapSize))
+	bboxStream := parse.NewBinaryWriter([]byte{})
+	instructionStream := parse.NewBinaryWriter([]byte{})
+	overlapSimpleStream := parse.NewBitmapWriter(make([]byte, bitmapSize))
 
 	var optionFlags uint16
 	xMins := make([]int16, numGlyphs)
@@ -1032,7 +1033,7 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 			instructionStream.WriteBytes(contour.Instructions)
 		} else {
 			// composite glyph
-			r := NewBinaryReader(glyf.Get(uint16(glyphID)))
+			r := parse.NewBinaryReader(glyf.Get(uint16(glyphID)))
 			_ = r.ReadInt16() // numberOfContours
 			xMin = r.ReadInt16()
 			yMin = r.ReadInt16()
@@ -1078,7 +1079,7 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 	if optionFlags&0x01 != 0 {
 		n += overlapSimpleStream.Len()
 	}
-	w := NewBinaryWriter(make([]byte, 0, n))
+	w := parse.NewBinaryWriter(make([]byte, 0, n))
 	w.WriteUint16(0) // reserved
 	w.WriteUint16(optionFlags)
 	w.WriteUint16(numGlyphs)
@@ -1139,7 +1140,7 @@ func transformHmtx(hmtx *hmtxTable, xMins []int16) []byte {
 		flags |= 0x02
 	}
 
-	w := NewBinaryWriter(make([]byte, 0, n))
+	w := parse.NewBinaryWriter(make([]byte, 0, n))
 	w.WriteUint8(flags)
 	for _, hmetrics := range hmtx.HMetrics {
 		w.WriteUint16(hmetrics.AdvanceWidth)
@@ -1157,7 +1158,7 @@ func transformHmtx(hmtx *hmtxTable, xMins []int16) []byte {
 	return w.Bytes()
 }
 
-func writeUintBase128(w *BinaryWriter, accum uint32) {
+func writeUintBase128(w *parse.BinaryWriter, accum uint32) {
 	// see https://www.w3.org/TR/WOFF2/#DataTypes
 	if accum == 0 {
 		w.WriteByte(0)
@@ -1176,7 +1177,7 @@ func writeUintBase128(w *BinaryWriter, accum uint32) {
 	}
 }
 
-func write255Uint16(w *BinaryWriter, val uint16) {
+func write255Uint16(w *parse.BinaryWriter, val uint16) {
 	// see https://www.w3.org/TR/WOFF2/#DataTypes
 	if val < 253 {
 		w.WriteByte(byte(val))

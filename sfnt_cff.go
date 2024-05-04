@@ -6,6 +6,8 @@ import (
 	"math"
 	"sort"
 	"strconv"
+
+	"github.com/tdewolff/parse/v2"
 )
 
 // TODO: use FDSelect for Font DICTs
@@ -29,7 +31,7 @@ func (sfnt *SFNT) parseCFF() error {
 		return fmt.Errorf("CFF: missing table")
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	major := r.ReadUint8()
 	minor := r.ReadUint8()
 	if major != 1 || minor != 0 {
@@ -188,7 +190,7 @@ func (sfnt *SFNT) parseCFF2() error {
 		return fmt.Errorf("CFF2: missing table")
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	major := r.ReadUint8()
 	minor := r.ReadUint8()
 	if major != 2 || minor != 0 {
@@ -318,7 +320,7 @@ const (
 	cff2Blend   int32 = 16
 )
 
-func cffReadCharStringNumber(r *BinaryReader, b0 int32) int32 {
+func cffReadCharStringNumber(r *parse.BinaryReader, b0 int32) int32 {
 	var v int32
 	if b0 == 28 {
 		v = int32(r.ReadInt16()) << 16
@@ -376,10 +378,10 @@ func (cff *cffTable) getSubroutine(glyphID uint16, b0 int32, stack int32) (int32
 //type cffCallStack struct {
 //	s *cffINDEX
 //	k uint16 // index into index.offset
-//	r *BinaryReader
+//	r *parse.BinaryReader
 //}
 
-func (cff *cffTable) parseCharString(glyphID uint16, cb func(*BinaryReader, int32, []int32) error) error {
+func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader, int32, []int32) error) error {
 	table := "CFF"
 	if cff.version == 2 {
 		table = "CFF2"
@@ -392,8 +394,8 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*BinaryReader, int3
 		return fmt.Errorf("%v: charstring too long", table)
 	}
 
-	callStack := []*BinaryReader{}
-	r := NewBinaryReader(charString)
+	callStack := []*parse.BinaryReader{}
+	r := parse.NewBinaryReader(charString)
 
 	hints := 0
 	stack := []int32{} // TODO: may overflow?
@@ -493,7 +495,7 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*BinaryReader, int3
 				stack = stack[:len(stack)-1]
 
 				callStack = append(callStack, r)
-				r = NewBinaryReader(subr)
+				r = parse.NewBinaryReader(subr)
 			case cffReturn:
 				if cff.version == 2 {
 					return fmt.Errorf("%v: unsupported operator %d", table, b0)
@@ -538,7 +540,7 @@ func (cff *cffTable) ToPath(p Pather, glyphID, ppem uint16, x0, y0, f float64, h
 	var x, y int32
 	f /= float64(1 << 16) // correct back
 
-	err := cff.parseCharString(glyphID, func(_ *BinaryReader, b0 int32, stack []int32) error {
+	err := cff.parseCharString(glyphID, func(_ *parse.BinaryReader, b0 int32, stack []int32) error {
 		switch b0 {
 		case cffRmoveto:
 			if len(stack) != 2 {
@@ -868,7 +870,7 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 		skipDepth := 0
 		indexStack = append(indexStack[:0], cff.charStrings)
 		offsetStack = append(offsetStack[:0], cff.charStrings.offset[glyphID])
-		err := cff.parseCharString(glyphID, func(r *BinaryReader, b0 int32, stack []int32) error {
+		err := cff.parseCharString(glyphID, func(r *parse.BinaryReader, b0 int32, stack []int32) error {
 			if b0 == cffCallsubr || b0 == cffCallgsubr {
 				if len(stack) == 0 {
 					return ErrBadNumOperands
@@ -903,7 +905,7 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 					// create the new charString encoded subrs index number
 					// the INDEX data never grows
 					lenNumber := uint32(cffNumberSize(int(oldIndex - oldBias)))
-					posNumber := r.pos - 1 - lenNumber // -1 as we're past the operator
+					posNumber := r.Pos() - 1 - lenNumber // -1 as we're past the operator
 
 					index := indexStack[len(indexStack)-1]
 					offset := offsetStack[len(offsetStack)-1]
@@ -977,7 +979,7 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 			}
 
 			// write new number
-			wNum := &BinaryWriter{index.data[ch.start-shrunk : ch.start-shrunk]}
+			wNum := parse.NewBinaryWriter(index.data[ch.start-shrunk : ch.start-shrunk])
 			if -107 <= ch.index && ch.index <= 107 {
 				wNum.WriteUint8(uint8(ch.index + 139))
 			} else if 108 <= ch.index && ch.index <= 1131 {
@@ -1030,7 +1032,7 @@ func (cff *cffTable) OptimizeSubrs() error {
 	var globalSubrsMap map[int32]int32 // old to new index
 	numGlyphs := uint16(cff.charStrings.Len())
 	for glyphID := uint16(0); glyphID < numGlyphs; glyphID++ {
-		err := cff.parseCharString(glyphID, func(_ *BinaryReader, b0 int32, stack []int32) error {
+		err := cff.parseCharString(glyphID, func(_ *parse.BinaryReader, b0 int32, stack []int32) error {
 			if b0 == cffCallsubr || b0 == cffCallgsubr {
 				if len(stack) == 0 {
 					return ErrBadNumOperands
@@ -1156,7 +1158,7 @@ func (t *cffINDEX) Extend(o *cffINDEX) {
 	t.data = append(t.data, o.data...)
 }
 
-func parseINDEX(r *BinaryReader, isCFF2 bool) (*cffINDEX, error) {
+func parseINDEX(r *parse.BinaryReader, isCFF2 bool) (*cffINDEX, error) {
 	t := &cffINDEX{}
 	var count uint32
 	if !isCFF2 {
@@ -1226,7 +1228,7 @@ func (t *cffINDEX) Write() ([]byte, error) {
 
 	offSize := cffINDEXOffSize(len(t.data) + 1)
 	n := 3 + len(t.data) + offSize*len(t.offset)
-	w := NewBinaryWriter(make([]byte, 0, n))
+	w := parse.NewBinaryWriter(make([]byte, 0, n))
 	w.WriteUint16(uint16(len(t.offset) - 1))
 	w.WriteUint8(uint8(offSize))
 	if offSize == 1 {
@@ -1392,7 +1394,7 @@ func parseTopDICT(b []byte, stringINDEX *cffINDEX) (*cffTopDICT, error) {
 
 func (t *cffTopDICT) Write(strings *cffINDEX) ([]byte, error) {
 	// TODO: some values have no default and may need to be written always
-	w := NewBinaryWriter([]byte{})
+	w := parse.NewBinaryWriter([]byte{})
 	if t.Version != "" {
 		writeDICTEntry(w, 0, strings.AddSID([]byte(t.Version)))
 	}
@@ -1580,7 +1582,7 @@ func parsePrivateDICT(b []byte, isCFF2 bool) (*cffPrivateDICT, error) {
 
 func (t *cffPrivateDICT) Write() ([]byte, error) {
 	// TODO: some values have no default and may need to be written always
-	w := NewBinaryWriter([]byte{})
+	w := parse.NewBinaryWriter([]byte{})
 	if 0 < len(t.BlueValues) {
 		writeDICTEntry(w, 6, t.BlueValues)
 	}
@@ -1677,7 +1679,7 @@ func parseDICT(b []byte, isCFF2 bool, callback func(b0 int, is []int, fs []float
 		256 + 13: -1,
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	ints := []int{}
 	reals := []float64{}
 	for 0 < r.Len() {
@@ -1727,7 +1729,7 @@ func parseDICT(b []byte, isCFF2 bool, callback func(b0 int, is []int, fs []float
 	return nil
 }
 
-func parseDICTNumber(b0 int, r *BinaryReader) (int, float64) {
+func parseDICTNumber(b0 int, r *parse.BinaryReader) (int, float64) {
 	if b0 < 28 {
 		// operator
 		return 0, math.NaN()
@@ -1824,7 +1826,7 @@ func cffDICTIntegerSize(i int) int {
 	return cffNumberSize(i)
 }
 
-func writeDICTEntry(w *BinaryWriter, op int, vals ...any) error {
+func writeDICTEntry(w *parse.BinaryWriter, op int, vals ...any) error {
 	if len(vals) == 1 {
 		switch vs := vals[0].(type) {
 		case []int:
@@ -1965,7 +1967,7 @@ func parseFontINDEX(b []byte, fdArray, fdSelect, nGlyphs int, isCFF2 bool) (*cff
 		return nil, fmt.Errorf("bad Font INDEX offset")
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	r.Seek(uint32(fdArray))
 	fontINDEX, err := parseINDEX(r, false)
 	if err != nil {
@@ -2070,7 +2072,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 		return nil, fmt.Errorf("must contain only one font")
 	}
 
-	w := NewBinaryWriter([]byte{})
+	w := parse.NewBinaryWriter([]byte{})
 	w.WriteUint8(1) // major version
 	w.WriteUint8(0) // minor version
 	w.WriteUint8(4) // hdrSize
@@ -2093,7 +2095,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 		return nil, fmt.Errorf("Top DICT: %v", err)
 	}
 
-	var charset *BinaryWriter
+	var charset *parse.BinaryWriter
 	if cff.charset != nil {
 		first := strings.Len()
 		numGlyphs := cff.charStrings.Len()
@@ -2101,7 +2103,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 			return nil, fmt.Errorf("charset length must match number of glyphs")
 		}
 
-		charset = NewBinaryWriter([]byte{})
+		charset = parse.NewBinaryWriter([]byte{})
 		if 257 < numGlyphs {
 			// format 2
 			charset.WriteUint8(2)
@@ -2160,7 +2162,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 			// write offset to Private DICT
 			localSubrsOffset = len(privateDICT) + 1                         // key
 			localSubrsOffset += cffDICTAppendedOffsetSize(localSubrsOffset) // val
-			wPrivate := &BinaryWriter{privateDICT}
+			wPrivate := parse.NewBinaryWriter(privateDICT)
 			writeDICTEntry(wPrivate, 19, localSubrsOffset)
 			privateDICT = wPrivate.Bytes()
 		}
@@ -2218,7 +2220,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 	privateOffset -= correct
 
 	// write offsets to Top DICT
-	wTop := &BinaryWriter{topDICT}
+	wTop := parse.NewBinaryWriter(topDICT)
 	if charset != nil {
 		writeDICTEntry(wTop, 15, charsetOffset)
 	}

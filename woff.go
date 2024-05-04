@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+
+	"github.com/tdewolff/parse/v2"
 )
 
 type woffTable struct {
@@ -50,7 +52,7 @@ func ParseWOFF(b []byte) ([]byte, error) {
 		return nil, ErrInvalidFontData
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	signature := r.ReadString(4)
 	if signature != "wOFF" {
 		return nil, fmt.Errorf("bad signature")
@@ -142,7 +144,7 @@ func ParseWOFF(b []byte) ([]byte, error) {
 	if MaxMemory < totalSfntSize {
 		return nil, ErrExceedsMemory
 	}
-	w := NewBinaryWriter(make([]byte, totalSfntSize))
+	w := parse.NewBinaryWriter(make([]byte, 0, totalSfntSize))
 	w.WriteString(flavor)
 	w.WriteUint16(numTables)
 	w.WriteUint16(searchRange)

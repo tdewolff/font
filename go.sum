@@ -66,10 +66,13 @@ github.com/tdewolff/minify/v2 v2.20.5 h1:IbJpmpAFESnuJPdsvFBJWsDcXE5qHsmaVQrRqhO
 github.com/tdewolff/minify/v2 v2.20.5/go.mod h1:N78HtaitkDYAWXFbqhWX/LzgwylwudK0JvybGDVQ+Mw=
 github.com/tdewolff/parse/v2 v2.7.3 h1:SHj/ry85FdqniccvzJTG+Gt/mi/HNa1cJcTzYZnvc5U=
 github.com/tdewolff/parse/v2 v2.7.3/go.mod h1:9p2qMIHpjRSTr1qnFxQr+igogyTUTlwvf9awHSm84h8=
+github.com/tdewolff/parse/v2 v2.7.14-0.20240504195401-e059b4173dce h1:MezHZZw4fykv09IcylHDhFbvGRRbv6ZA5xLBPtzlNss=
+github.com/tdewolff/parse/v2 v2.7.14-0.20240504195401-e059b4173dce/go.mod h1:3FbJWZp3XT9OWVN3Hmfp0p/a08v4h8J9W1aghka0soA=
 github.com/tdewolff/prompt v0.0.0-20240229160307-11febf5f2a1d h1:M1eBxKdfM/JVkTXMh0EEC9GS8ap6/qYvl4NA7QAPqAw=
 github.com/tdewolff/prompt v0.0.0-20240229160307-11febf5f2a1d/go.mod h1:/JVpNFrxFgR89G0gIDL5EHBBrMqs1ZA9ZVQZaxRI1uA=
 github.com/tdewolff/test v1.0.6/go.mod h1:6DAvZliBAAnD7rhVgwaM7DE5/d9NMOAJ09SqYqeK4QE=
 github.com/tdewolff/test v1.0.10/go.mod h1:6DAvZliBAAnD7rhVgwaM7DE5/d9NMOAJ09SqYqeK4QE=
+github.com/tdewolff/test v1.0.11-0.20231101010635-f1265d231d52/go.mod h1:6DAvZliBAAnD7rhVgwaM7DE5/d9NMOAJ09SqYqeK4QE=
 github.com/tdewolff/test v1.0.11-0.20231121141655-2d5236e10ae4 h1:CmTImZFElFD07EUPqgMEraDMnJX1E5oJKeibjg0SC2c=
 github.com/tdewolff/test v1.0.11-0.20231121141655-2d5236e10ae4/go.mod h1:XPuWBzvdUzhCuxWO1ojpXsyzsA5bFoS3tO/Q3kFuTG8=
 github.com/ulikunitz/xz v0.5.6/go.mod h1:2bypXElzHzzJZwzH67Y6wb67pO62Rzfn7BSiF4ABRW8=

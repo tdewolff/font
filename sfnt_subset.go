@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/tdewolff/parse/v2"
 )
 
 var (
@@ -189,7 +191,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			sfnt.Tables[tag] = b
 			sfnt.CFF = &cff
 		case "glyf":
-			w := NewBinaryWriter([]byte{})
+			w := parse.NewBinaryWriter([]byte{})
 			for i, glyphID := range glyphIDs {
 				if glyphID == 0 {
 					// empty .notdef
@@ -205,7 +207,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 					for {
 						flags := binary.BigEndian.Uint16(b[offset:])
 						subGlyphID := binary.BigEndian.Uint16(b[offset+2:])
-						binary.BigEndian.PutUint16(w.buf[start+offset+2:], glyphMap[subGlyphID])
+						binary.BigEndian.PutUint16(w.Bytes()[start+offset+2:], glyphMap[subGlyphID])
 
 						length, more := glyfCompositeLength(flags)
 						if !more {
@@ -234,8 +236,8 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 						w.WriteBytes(contour.Instructions)
 
 						repeats := 0
-						xs := NewBinaryWriter([]byte{})
-						ys := NewBinaryWriter([]byte{})
+						xs := parse.NewBinaryWriter([]byte{})
+						ys := parse.NewBinaryWriter([]byte{})
 						numPoints := int(contour.EndPoints[numberOfContours-1]) + 1
 						for i := 0; i < numPoints; i++ {
 							dx := contour.XCoordinates[i]
@@ -282,25 +284,25 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 							}
 
 							// handle flag repeats
-							if 0 < i && repeats < 255 && flag == w.buf[len(w.buf)-1] {
+							if 0 < i && repeats < 255 && flag == w.Bytes()[w.Len()-1] {
 								repeats++
 							} else {
 								if 1 < repeats {
-									w.buf[len(w.buf)-1] |= 0x08 // REPEAT_FLAG
+									w.Bytes()[w.Len()-1] |= 0x08 // REPEAT_FLAG
 									w.WriteByte(byte(repeats))
 									repeats = 0
 								} else if repeats == 1 {
-									w.WriteByte(w.buf[len(w.buf)-1])
+									w.WriteByte(w.Bytes()[w.Len()-1])
 									repeats = 0
 								}
 								w.WriteByte(flag)
 							}
 						}
 						if 1 < repeats {
-							w.buf[len(w.buf)-1] |= 0x08 // REPEAT_FLAG
+							w.Bytes()[w.Len()-1] |= 0x08 // REPEAT_FLAG
 							w.WriteByte(byte(repeats))
 						} else if repeats == 1 {
-							w.WriteByte(w.buf[len(w.buf)-1])
+							w.WriteByte(w.Bytes()[w.Len()-1])
 						}
 						w.WriteBytes(xs.Bytes())
 						w.WriteBytes(ys.Bytes())
@@ -323,7 +325,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 				loca: sfnt.Loca,
 			}
 		case "head":
-			w := NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["head"])))
+			w := parse.NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["head"])))
 			w.WriteBytes(table[:50])
 			w.WriteInt16(indexToLocFormat) // indexToLocFormat
 			w.WriteBytes(table[52:])
@@ -332,7 +334,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			sfnt.Head = &(*sfntOld.Head)
 			sfnt.Head.IndexToLocFormat = indexToLocFormat
 		case "hhea":
-			w := NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["hhea"])))
+			w := parse.NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["hhea"])))
 			w.WriteBytes(table[:34])
 			w.WriteUint16(numberOfHMetrics) // numberOfHMetrics
 			w.WriteBytes(table[36:])
@@ -346,7 +348,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			sfnt.Hmtx.LeftSideBearings = make([]int16, len(glyphIDs)-int(numberOfHMetrics))
 
 			n := 4*int(numberOfHMetrics) + 2*(len(glyphIDs)-int(numberOfHMetrics))
-			w := NewBinaryWriter(make([]byte, 0, n))
+			w := parse.NewBinaryWriter(make([]byte, 0, n))
 			for subsetGlyphID, glyphID := range glyphIDs {
 				lsb := sfntOld.Hmtx.LeftSideBearing(glyphID)
 				if subsetGlyphID < int(numberOfHMetrics) {
@@ -395,16 +397,16 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			sfnt.Tables[tag] = kern.Write()
 			sfnt.Kern = &kern
 		case "loca":
-			var w *BinaryWriter
+			var w *parse.BinaryWriter
 			if indexToLocFormat == 0 {
 				// short format
-				w = NewBinaryWriter(make([]byte, 2*len(glyfOffsets)))
+				w = parse.NewBinaryWriter(make([]byte, 0, 2*len(glyfOffsets)))
 				for _, offset := range glyfOffsets {
 					w.WriteUint16(uint16(offset / 2))
 				}
 			} else {
 				// long format
-				w = NewBinaryWriter(make([]byte, 4*len(glyfOffsets)))
+				w = parse.NewBinaryWriter(make([]byte, 0, 4*len(glyfOffsets)))
 				for _, offset := range glyfOffsets {
 					w.WriteUint32(offset)
 				}
@@ -414,13 +416,13 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			sfnt.Loca.Format = indexToLocFormat
 			sfnt.Loca.data = w.Bytes()
 		case "maxp":
-			w := NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["maxp"])))
+			w := parse.NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["maxp"])))
 			w.WriteBytes(table[:4])
 			w.WriteUint16(uint16(len(glyphIDs))) // numGlyphs
 			w.WriteBytes(table[6:])
 			sfnt.Tables[tag] = w.Bytes()
 		case "name":
-			w := NewBinaryWriter(make([]byte, 0, 6))
+			w := parse.NewBinaryWriter(make([]byte, 0, 6))
 			w.WriteUint16(0) // version
 			w.WriteUint16(0) // count
 			w.WriteUint16(6) // storageOffset
@@ -434,7 +436,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			sfnt.OS2.UlUnicodeRange3 = ulUnicodeRange[2]
 			sfnt.OS2.UlUnicodeRange4 = ulUnicodeRange[3]
 
-			w := NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["OS/2"])))
+			w := parse.NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["OS/2"])))
 			w.WriteBytes(table[:42])
 			w.WriteUint32(sfnt.OS2.UlUnicodeRange1)
 			w.WriteUint32(sfnt.OS2.UlUnicodeRange2)
@@ -443,7 +445,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			w.WriteBytes(table[58:])
 			sfnt.Tables[tag] = w.Bytes()
 		case "post":
-			w := NewBinaryWriter(make([]byte, 0, 32))
+			w := parse.NewBinaryWriter(make([]byte, 0, 32))
 			w.WriteUint32(0x00030000) // version
 			w.WriteBytes(table[4:32])
 			sfnt.Tables[tag] = w.Bytes()

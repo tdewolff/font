@@ -11,6 +11,7 @@ import (
 	"sort"
 
 	"github.com/golang/freetype/truetype"
+	"github.com/tdewolff/parse/v2"
 	"golang.org/x/image/font/sfnt"
 )
 
@@ -128,7 +129,7 @@ func FromGoFreetype(font *truetype.Font) []byte {
 	tables["vmtx"] = v.FieldByName("vmtx").Bytes()
 
 	// reconstruct missing post table
-	post := NewBinaryWriter([]byte{})
+	post := parse.NewBinaryWriter([]byte{})
 	post.WriteUint32(0x00030000) // version
 	post.WriteUint32(0)          // italicAngle
 	post.WriteInt16(0)           // underlinePosition
@@ -149,7 +150,7 @@ func FromGoFreetype(font *truetype.Font) []byte {
 	}
 	sort.Strings(tags)
 
-	w := NewBinaryWriter([]byte{})
+	w := parse.NewBinaryWriter([]byte{})
 	w.WriteUint32(0x00010000) // sfntVersion
 
 	numTables := uint16(len(tags))

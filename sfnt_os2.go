@@ -1,6 +1,10 @@
 package font
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/tdewolff/parse/v2"
+)
 
 type os2Table struct {
 	Version                 uint16
@@ -61,7 +65,7 @@ func (sfnt *SFNT) parseOS2() error {
 		return fmt.Errorf("OS/2: bad table")
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	sfnt.OS2 = &os2Table{}
 	sfnt.OS2.Version = r.ReadUint16()
 	if 5 < sfnt.OS2.Version {

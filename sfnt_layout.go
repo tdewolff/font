@@ -1,6 +1,10 @@
 package font
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/tdewolff/parse/v2"
+)
 
 type langSys struct {
 	requiredFeatureIndex uint16
@@ -26,9 +30,9 @@ func (scriptList scriptList) getLangSys(scriptTag ScriptTag, languageTag Languag
 }
 
 func (sfnt *SFNT) parseScriptList(b []byte) (scriptList, error) {
-	r := NewBinaryReader(b)
-	r2 := NewBinaryReader(b)
-	r3 := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
+	r2 := parse.NewBinaryReader(b)
+	r3 := parse.NewBinaryReader(b)
 	scriptCount := r.ReadUint16()
 	scripts := make(scriptList, scriptCount)
 	for i := 0; i < int(scriptCount); i++ {
@@ -92,8 +96,8 @@ func (featureList featureList) get(i uint16) (FeatureTag, []uint16, error) {
 }
 
 func (sfnt *SFNT) parseFeatureList(b []byte) featureList {
-	r := NewBinaryReader(b)
-	r2 := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
+	r2 := parse.NewBinaryReader(b)
 	featureCount := r.ReadUint16()
 	tags := make([]FeatureTag, featureCount)
 	features := make([][]uint16, featureCount)
@@ -130,8 +134,8 @@ type lookup struct {
 type lookupList []lookup
 
 func (sfnt *SFNT) parseLookupList(b []byte) lookupList {
-	r := NewBinaryReader(b)
-	r2 := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
+	r2 := parse.NewBinaryReader(b)
 	lookupCount := r.ReadUint16()
 	lookups := make(lookupList, lookupCount)
 	for i := 0; i < int(lookupCount); i++ {
@@ -196,7 +200,7 @@ func (table *coverageFormat2) Index(glyphID uint16) (uint16, bool) {
 }
 
 func (sfnt *SFNT) parseCoverageTable(b []byte) (coverageTable, error) {
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	coverageFormat := r.ReadUint16()
 	if coverageFormat == 1 {
 		glyphCount := r.ReadUint16()
@@ -264,7 +268,7 @@ func (table classDefFormat2) Get(glyphID uint16) uint16 {
 }
 
 func (sfnt *SFNT) parseClassDefTable(b []byte, classCount uint16) (classDefTable, error) {
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	classFormat := r.ReadUint16()
 	if classFormat == 1 {
 		startGlyphID := r.ReadUint16()
@@ -309,7 +313,7 @@ type ValueRecord struct {
 	YAdvDeviceOffset uint16
 }
 
-func (sfnt *SFNT) parseValueRecord(r *BinaryReader, valueFormat uint16) (valueRecord ValueRecord) {
+func (sfnt *SFNT) parseValueRecord(r *parse.BinaryReader, valueFormat uint16) (valueRecord ValueRecord) {
 	if valueFormat == 0 {
 		return
 	} else if valueFormat&0x0001 != 0 { // X_PLACEMENT
@@ -374,7 +378,7 @@ func (table *singlePosFormat2) Get(glyphID uint16) (ValueRecord, bool) {
 }
 
 func (sfnt *SFNT) parseSinglePosTable(b []byte) (interface{}, error) {
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	posFormat := r.ReadUint16()
 	coverageOffset := r.ReadUint16()
 	coverageTable, err := sfnt.parseCoverageTable(b[coverageOffset:])
@@ -466,8 +470,8 @@ func (table *pairPosFormat2) Get(glyphID1, glyphID2 uint16) (ValueRecord, ValueR
 }
 
 func (sfnt *SFNT) parsePairPosTable(b []byte) (interface{}, error) {
-	r := NewBinaryReader(b)
-	r2 := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
+	r2 := parse.NewBinaryReader(b)
 	posFormat := r.ReadUint16()
 	coverageOffset := r.ReadUint16()
 	coverageTable, err := sfnt.parseCoverageTable(b[coverageOffset:])
@@ -559,7 +563,7 @@ func (table *singleSubstFormat2) Get(glyphID uint16) (uint16, bool) {
 }
 
 func (sfnt *SFNT) parseSingleSubstTable(b []byte) (interface{}, error) {
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	substFormat := r.ReadUint16()
 	coverageOffset := r.ReadUint16()
 	coverageTable, err := sfnt.parseCoverageTable(b[coverageOffset:])
@@ -602,8 +606,8 @@ func (table *multipleSubstFormat1) Get(glyphID uint16) ([]uint16, bool) {
 }
 
 func (sfnt *SFNT) parseMultipleSubstTable(b []byte) (interface{}, error) {
-	r := NewBinaryReader(b)
-	r2 := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
+	r2 := parse.NewBinaryReader(b)
 	substFormat := r.ReadUint16()
 	if substFormat != 1 {
 		return nil, fmt.Errorf("bad multiple substitution table format")
@@ -635,7 +639,7 @@ func (sfnt *SFNT) parseMultipleSubstTable(b []byte) (interface{}, error) {
 }
 
 func (sfnt *SFNT) parseAlternateSubstTable(b []byte) (interface{}, error) {
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	substFormat := r.ReadUint16()
 	if substFormat != 1 {
 		return nil, fmt.Errorf("bad alternate substitution table format")
@@ -671,9 +675,9 @@ func (table *ligatureSubstFormat1) Get(glyphIDs []uint16) (uint16, bool) {
 }
 
 func (sfnt *SFNT) parseLigatureSubstTable(b []byte) (interface{}, error) {
-	r := NewBinaryReader(b)
-	r2 := NewBinaryReader(b)
-	r3 := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
+	r2 := parse.NewBinaryReader(b)
+	r3 := parse.NewBinaryReader(b)
 	substFormat := r.ReadUint16()
 	if substFormat != 1 {
 		return nil, fmt.Errorf("bad ligature substitution table format")
@@ -792,7 +796,7 @@ func (sfnt *SFNT) parseGPOSGSUB(name string, subtableMap subtableMap) (*gposgsub
 	}
 
 	table := &gposgsubTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	majorVersion := r.ReadUint16()
 	minorVersion := r.ReadUint16()
 	if majorVersion != 1 && minorVersion != 0 && minorVersion != 1 {
@@ -871,7 +875,7 @@ func (sfnt *SFNT) parseJSFT() error {
 	}
 
 	sfnt.Jsft = &jsftTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	majorVersion := r.ReadUint16()
 	minorVersion := r.ReadUint16()
 	if majorVersion != 1 && minorVersion != 0 {

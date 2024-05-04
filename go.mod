@@ -25,7 +25,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.5 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/tdewolff/minify/v2 v2.20.5 // indirect
-	github.com/tdewolff/parse/v2 v2.7.3 // indirect
+	github.com/tdewolff/parse/v2 v2.7.14-0.20240504195401-e059b4173dce // indirect
 	golang.org/x/net v0.17.0 // indirect
 	star-tex.org/x/tex v0.4.0 // indirect
 )

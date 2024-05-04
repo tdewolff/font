@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/tdewolff/parse/v2"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/unicode"
@@ -210,7 +211,7 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 		return nil, ErrInvalidFontData
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	sfntVersion := r.ReadString(4)
 	isCollection := sfntVersion == "ttcf"
 	if isCollection {
@@ -403,7 +404,7 @@ func (sfnt *SFNT) Write() []byte {
 	sort.Strings(tags)
 
 	// write header
-	w := NewBinaryWriter([]byte{})
+	w := parse.NewBinaryWriter([]byte{})
 	if sfnt.IsTrueType {
 		w.WriteUint32(0x00010000) // sfntVersion
 	} else if sfnt.IsCFF {
@@ -483,7 +484,7 @@ func (sfnt *SFNT) parseHead() error {
 	}
 
 	sfnt.Head = &headTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	majorVersion := r.ReadUint16()
 	minorVersion := r.ReadUint16()
 	if majorVersion != 1 && minorVersion != 0 {
@@ -548,7 +549,7 @@ func (sfnt *SFNT) parseHhea() error {
 	}
 
 	sfnt.Hhea = &hheaTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	majorVersion := r.ReadUint16()
 	minorVersion := r.ReadUint16()
 	if majorVersion != 1 && minorVersion != 0 {
@@ -606,7 +607,7 @@ func (sfnt *SFNT) parseVhea() error {
 	}
 
 	sfnt.Vhea = &vheaTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	majorVersion := r.ReadUint16()
 	minorVersion := r.ReadUint16()
 	if majorVersion != 1 && minorVersion != 0 && minorVersion != 1 {
@@ -681,7 +682,7 @@ func (sfnt *SFNT) parseHmtx() error {
 	sfnt.Hmtx.HMetrics = make([]hmtxLongHorMetric, sfnt.Hhea.NumberOfHMetrics)
 	sfnt.Hmtx.LeftSideBearings = make([]int16, sfnt.Maxp.NumGlyphs-sfnt.Hhea.NumberOfHMetrics)
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	for i := 0; i < int(sfnt.Hhea.NumberOfHMetrics); i++ {
 		sfnt.Hmtx.HMetrics[i].AdvanceWidth = r.ReadUint16()
 		sfnt.Hmtx.HMetrics[i].LeftSideBearing = r.ReadInt16()
@@ -739,7 +740,7 @@ func (sfnt *SFNT) parseVmtx() error {
 	sfnt.Vmtx.VMetrics = make([]vmtxLongVerMetric, sfnt.Vhea.NumberOfVMetrics)
 	sfnt.Vmtx.TopSideBearings = make([]int16, sfnt.Maxp.NumGlyphs-sfnt.Vhea.NumberOfVMetrics)
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	for i := 0; i < int(sfnt.Vhea.NumberOfVMetrics); i++ {
 		sfnt.Vmtx.VMetrics[i].AdvanceHeight = r.ReadUint16()
 		sfnt.Vmtx.VMetrics[i].TopSideBearing = r.ReadInt16()
@@ -776,7 +777,7 @@ func (sfnt *SFNT) parseMaxp() error {
 	}
 
 	sfnt.Maxp = &maxpTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	version := binary.BigEndian.Uint32(r.ReadBytes(4))
 	sfnt.Maxp.NumGlyphs = r.ReadUint16()
 	if version == 0x00005000 && !sfnt.IsTrueType && len(b) == 6 {
@@ -862,7 +863,7 @@ func (sfnt *SFNT) parseName() error {
 	}
 
 	sfnt.Name = &nameTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	version := r.ReadUint16()
 	if version != 0 && version != 1 {
 		return fmt.Errorf("name: bad version")
@@ -973,7 +974,7 @@ func (sfnt *SFNT) parsePost() error {
 	_, isCFF2 := sfnt.Tables["CFF2"]
 
 	sfnt.Post = &postTable{}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	version := r.ReadUint32()
 	sfnt.Post.ItalicAngle = float64(r.ReadInt32()) / (1 << 16)
 	sfnt.Post.UnderlinePosition = r.ReadInt16()
@@ -1031,7 +1032,7 @@ func (post *postTable) Write() ([]byte, error) {
 		version = 0x00020000
 	}
 
-	w := NewBinaryWriter(make([]byte, 32))
+	w := parse.NewBinaryWriter(make([]byte, 0, 32))
 	w.WriteUint32(uint32(version))
 	w.WriteUint32(uint32(post.ItalicAngle*(1<<16) + 0.5))
 	w.WriteInt16(post.UnderlinePosition)

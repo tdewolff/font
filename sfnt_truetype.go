@@ -6,6 +6,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"github.com/tdewolff/parse/v2"
 )
 
 ////////////////////////////////////////////////////////////////
@@ -98,7 +100,7 @@ func (glyf *glyfTable) dependencies(glyphID uint16, level int) ([]uint16, error)
 	} else if len(b) == 0 {
 		return deps, nil
 	}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	if r.Len() < 10 {
 		return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 	}
@@ -165,7 +167,7 @@ func (glyf *glyfTable) contour(glyphID uint16, level int) (*glyfContour, error) 
 	} else if len(b) == 0 {
 		return &glyfContour{GlyphID: glyphID}, nil
 	}
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	if r.Len() < 10 {
 		return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 	}
@@ -476,7 +478,7 @@ func (sfnt *SFNT) parseLoca() error {
 		data:   b,
 	}
 	//sfnt.Loca.Offsets = make([]uint32, sfnt.Maxp.NumGlyphs+1)
-	//r := NewBinaryReader(b)
+	//r := parse.NewBinaryReader(b)
 	//if sfnt.Head.IndexToLocFormat == 0 {
 	//	if uint32(len(b)) != 2*(uint32(sfnt.Maxp.NumGlyphs)+1) {
 	//		return fmt.Errorf("loca: bad table")
@@ -554,7 +556,7 @@ func (sfnt *SFNT) parseKern() error {
 		return fmt.Errorf("kern: bad table")
 	}
 
-	r := NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	majorVersion := r.ReadUint16()
 	if majorVersion != 0 && majorVersion != 1 {
 		return fmt.Errorf("kern: bad version %d", majorVersion)
@@ -636,7 +638,7 @@ func (sfnt *SFNT) parseKern() error {
 }
 
 func (kern *kernTable) Write() []byte {
-	w := NewBinaryWriter([]byte{})
+	w := parse.NewBinaryWriter([]byte{})
 	w.WriteUint16(0)                           // version
 	w.WriteUint16(uint16(len(kern.Subtables))) // nTables
 	for _, subtable := range kern.Subtables {
