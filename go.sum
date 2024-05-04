@@ -64,14 +64,11 @@ github.com/tdewolff/canvas v0.0.0-20240301225202-94b55b0c5a78 h1:5AwJ3q5oWM/hrO0
 github.com/tdewolff/canvas v0.0.0-20240301225202-94b55b0c5a78/go.mod h1:hGxWCl1a3KdYh6pxYy9sa9jLAlmKLMeuCSCjjy39iVE=
 github.com/tdewolff/minify/v2 v2.20.5 h1:IbJpmpAFESnuJPdsvFBJWsDcXE5qHsmaVQrRqhOI9sI=
 github.com/tdewolff/minify/v2 v2.20.5/go.mod h1:N78HtaitkDYAWXFbqhWX/LzgwylwudK0JvybGDVQ+Mw=
-github.com/tdewolff/parse/v2 v2.7.3 h1:SHj/ry85FdqniccvzJTG+Gt/mi/HNa1cJcTzYZnvc5U=
-github.com/tdewolff/parse/v2 v2.7.3/go.mod h1:9p2qMIHpjRSTr1qnFxQr+igogyTUTlwvf9awHSm84h8=
-github.com/tdewolff/parse/v2 v2.7.14-0.20240504195401-e059b4173dce h1:MezHZZw4fykv09IcylHDhFbvGRRbv6ZA5xLBPtzlNss=
-github.com/tdewolff/parse/v2 v2.7.14-0.20240504195401-e059b4173dce/go.mod h1:3FbJWZp3XT9OWVN3Hmfp0p/a08v4h8J9W1aghka0soA=
+github.com/tdewolff/parse/v2 v2.7.14-0.20240504202255-80d8980f2e49 h1:HM/g4vlP0vhkBEXzvhifsz9KZ6A5YVCILqETNNzaB+8=
+github.com/tdewolff/parse/v2 v2.7.14-0.20240504202255-80d8980f2e49/go.mod h1:3FbJWZp3XT9OWVN3Hmfp0p/a08v4h8J9W1aghka0soA=
 github.com/tdewolff/prompt v0.0.0-20240229160307-11febf5f2a1d h1:M1eBxKdfM/JVkTXMh0EEC9GS8ap6/qYvl4NA7QAPqAw=
 github.com/tdewolff/prompt v0.0.0-20240229160307-11febf5f2a1d/go.mod h1:/JVpNFrxFgR89G0gIDL5EHBBrMqs1ZA9ZVQZaxRI1uA=
 github.com/tdewolff/test v1.0.6/go.mod h1:6DAvZliBAAnD7rhVgwaM7DE5/d9NMOAJ09SqYqeK4QE=
-github.com/tdewolff/test v1.0.10/go.mod h1:6DAvZliBAAnD7rhVgwaM7DE5/d9NMOAJ09SqYqeK4QE=
 github.com/tdewolff/test v1.0.11-0.20231101010635-f1265d231d52/go.mod h1:6DAvZliBAAnD7rhVgwaM7DE5/d9NMOAJ09SqYqeK4QE=
 github.com/tdewolff/test v1.0.11-0.20231121141655-2d5236e10ae4 h1:CmTImZFElFD07EUPqgMEraDMnJX1E5oJKeibjg0SC2c=
 github.com/tdewolff/test v1.0.11-0.20231121141655-2d5236e10ae4/go.mod h1:XPuWBzvdUzhCuxWO1ojpXsyzsA5bFoS3tO/Q3kFuTG8=
