@@ -7,7 +7,7 @@ require (
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/tdewolff/argp v0.0.0-20240307141015-960de61a6aa8
 	github.com/tdewolff/canvas v0.0.0-20240301225202-94b55b0c5a78
-	github.com/tdewolff/parse/v2 v2.7.14-0.20240504202255-80d8980f2e49
+	github.com/tdewolff/parse/v2 v2.7.14-0.20240511005308-a1dd1e88845b
 	github.com/tdewolff/prompt v0.0.0-20240229160307-11febf5f2a1d
 	github.com/tdewolff/test v1.0.11-0.20231121141655-2d5236e10ae4
 	golang.org/x/image v0.15.0

@@ -8,56 +8,56 @@ import (
 
 // ParseEOT parses the EOT font format and returns its contained SFNT font format (TTF or OTF). See https://www.w3.org/Submission/EOT/
 func ParseEOT(b []byte) ([]byte, error) {
-	r := parse.NewBinaryReader(b)
-	_ = r.ReadUint32LE()             // EOTSize
-	fontDataSize := r.ReadUint32LE() // FontDataSize
-	version := r.ReadUint32LE()      // Version
+	r := parse.NewBinaryReaderLE(b)
+	_ = r.ReadUint32()             // EOTSize
+	fontDataSize := r.ReadUint32() // FontDataSize
+	version := r.ReadUint32()      // Version
 	if version != 0x00010000 && version != 0x00020001 && version != 0x00020002 {
 		return nil, fmt.Errorf("unsupported version")
 	}
-	flags := r.ReadUint32LE()       // Flags
-	_ = r.ReadBytes(10)             // FontPANOSE
-	_ = r.ReadByte()                // Charset
-	_ = r.ReadByte()                // Italic
-	_ = r.ReadUint32LE()            // Weight
-	_ = r.ReadUint16LE()            // fsType
-	magicNumber := r.ReadUint16LE() // MagicNumber
+	flags := r.ReadUint32()       // Flags
+	_ = r.ReadBytes(10)           // FontPANOSE
+	_ = r.ReadByte()              // Charset
+	_ = r.ReadByte()              // Italic
+	_ = r.ReadUint32()            // Weight
+	_ = r.ReadUint16()            // fsType
+	magicNumber := r.ReadUint16() // MagicNumber
 	if magicNumber != 0x504C {
 		return nil, fmt.Errorf("invalid magic number")
 	}
 	_ = r.ReadBytes(24) // Unicode and CodePage ranges
-	checkSumAdjustment := r.ReadUint32LE()
-	_ = r.ReadBytes(16)  // Reserved
-	_ = r.ReadUint16LE() // Padding1
+	checkSumAdjustment := r.ReadUint32()
+	_ = r.ReadBytes(16) // Reserved
+	_ = r.ReadUint16()  // Padding1
 
-	familyNameSize := r.ReadUint16LE()      // FamilyNameSize
+	familyNameSize := r.ReadUint16()        // FamilyNameSize
 	_ = r.ReadBytes(uint32(familyNameSize)) // FamilyName
-	_ = r.ReadUint16LE()                    // Padding2
+	_ = r.ReadUint16()                      // Padding2
 
-	styleNameSize := r.ReadUint16LE()      // StyleNameSize
+	styleNameSize := r.ReadUint16()        // StyleNameSize
 	_ = r.ReadBytes(uint32(styleNameSize)) // Stylename
-	_ = r.ReadUint16LE()                   // Padding3
+	_ = r.ReadUint16()                     // Padding3
 
-	versionNameSize := r.ReadUint16LE()      // VersionNameSize
+	versionNameSize := r.ReadUint16()        // VersionNameSize
 	_ = r.ReadBytes(uint32(versionNameSize)) // VersionName
-	_ = r.ReadUint16LE()                     // Padding4
+	_ = r.ReadUint16()                       // Padding4
 
-	fullNameSize := r.ReadUint16LE()      // FullNameSize
+	fullNameSize := r.ReadUint16()        // FullNameSize
 	_ = r.ReadBytes(uint32(fullNameSize)) // FullName
 
 	if version == 0x00020001 || version == 0x00020002 {
-		_ = r.ReadUint16LE()                    // Padding5
-		rootStringSize := r.ReadUint16LE()      // RootStringSize
+		_ = r.ReadUint16()                      // Padding5
+		rootStringSize := r.ReadUint16()        // RootStringSize
 		_ = r.ReadBytes(uint32(rootStringSize)) // RootString
 	}
 	if version == 0x00020002 {
-		_ = r.ReadUint32LE()                   // RootStringCheckSum
-		_ = r.ReadUint32LE()                   // EUDCCodePage
-		_ = r.ReadUint16LE()                   // Padding6
-		signatureSize := r.ReadUint16LE()      // SignatureSize
+		_ = r.ReadUint32()                     // RootStringCheckSum
+		_ = r.ReadUint32()                     // EUDCCodePage
+		_ = r.ReadUint16()                     // Padding6
+		signatureSize := r.ReadUint16()        // SignatureSize
 		_ = r.ReadBytes(uint32(signatureSize)) // Signature
-		_ = r.ReadUint32LE()                   // EUDCFlags
-		eudcFontSize := r.ReadUint32LE()       // EUDCFontSize
+		_ = r.ReadUint32()                     // EUDCFlags
+		eudcFontSize := r.ReadUint32()         // EUDCFontSize
 		_ = r.ReadBytes(uint32(eudcFontSize))  // EUDCFontData
 	}
 
