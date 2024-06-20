@@ -23,7 +23,7 @@ var extMimetype = map[string]string{
 	".otc":   "font/opentype",
 	".woff":  "font/woff",
 	".woff2": "font/woff2",
-	".eot":   "font/eot",
+	".eot":   "application/vnd.ms-fontobject",
 }
 
 func printableRune(r rune) string {

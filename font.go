@@ -31,7 +31,7 @@ func MediaType(b []byte) (string, error) {
 	} else if tag == "OTTO" {
 		return "font/opentype", nil
 	} else if 36 < len(b) && binary.LittleEndian.Uint16(b[34:36]) == 0x504C {
-		return "font/eot", nil
+		return "application/vnd.ms-fontobject", nil
 	}
 	return "", fmt.Errorf("unrecognized font file format")
 }
@@ -51,7 +51,7 @@ func Extension(b []byte) string {
 		return ".woff"
 	case "font/woff2":
 		return ".woff2"
-	case "font/eot":
+	case "application/vnd.ms-fontobject":
 		return ".eot"
 	}
 	return ""
@@ -78,7 +78,7 @@ func ToSFNT(b []byte) ([]byte, error) {
 			return nil, fmt.Errorf("WOFF2: %w", err)
 		}
 		return b, nil
-	case "font/eot":
+	case "application/vnd.ms-fontobject":
 		if b, err = ParseEOT(b); err != nil {
 			return nil, fmt.Errorf("EOT: %w", err)
 		}
