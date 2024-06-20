@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"github.com/tdewolff/font"
+	"github.com/tdewolff/parse/v2"
 )
 
 type Info struct {
@@ -25,7 +26,7 @@ func (cmd *Info) Run() error {
 		return err
 	}
 
-	r := font.NewBinaryReader(b)
+	r := parse.NewBinaryReader(b)
 	sfntVersion := r.ReadString(4)
 	if sfntVersion == "ttcf" {
 		_ = r.ReadUint32() // majorVersion and minorVersion

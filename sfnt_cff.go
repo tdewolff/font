@@ -435,7 +435,8 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader
 					if b0 == cffRmoveto || b0 == cffHmoveto || b0 == cffVmoveto {
 						beforeMoveto = false
 					}
-				} else if b0 != cffCallsubr && b0 != cffCallgsubr {
+				} else if b0 != cffCallsubr && b0 != cffCallgsubr && b0 != cffReturn {
+					// return could be of main charstring or of subroutine
 					return fmt.Errorf("%v: unexpected operator %d before moveto", table, b0)
 				}
 			} else if !beforeMoveto && cff.version == 1 && (b0 == cffHstem || b0 == cffVstem || b0 == cffHstemhm || b0 == cffVstemhm) {
