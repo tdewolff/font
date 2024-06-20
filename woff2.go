@@ -780,11 +780,21 @@ func read255Uint16(r *parse.BinaryReader) uint16 {
 }
 
 func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
+	tags := make([]string, 0, len(sfnt.Tables))
+	for tag, _ := range sfnt.Tables {
+		if tag == "DSIG" {
+			continue // exclude DSIG table
+		}
+		tags = append(tags, tag)
+	}
+	// TODO: (WOFF2) loca must follow glyf for TTC
+	sort.Strings(tags)
+
 	w := parse.NewBinaryWriter(make([]byte, 0, sfnt.Length*6/10)) // estimated size
 	w.WriteString("wOF2")                                         // signature
 	w.WriteString(sfnt.Version)                                   // flavor
 	w.WriteUint32(0)                                              // length (set later)
-	w.WriteUint16(uint16(len(sfnt.Tables)))                       // numTables
+	w.WriteUint16(uint16(len(tags)))                              // numTables
 	w.WriteUint16(0)                                              // reserved
 	w.WriteUint32(sfnt.Length)                                    // totalSfntSize
 	w.WriteUint32(0)                                              // totalCompressedSize (set later)
@@ -795,16 +805,6 @@ func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 	w.WriteUint32(0)                                              // metaOrigLength
 	w.WriteUint32(0)                                              // privOffset
 	w.WriteUint32(0)                                              // privLength
-
-	tags := make([]string, 0, len(sfnt.Tables))
-	for tag, _ := range sfnt.Tables {
-		if tag == "DSIG" {
-			continue // exclude DSIG table
-		}
-		tags = append(tags, tag)
-	}
-	// TODO: (WOFF2) loca must follow glyf for TTC
-	sort.Strings(tags)
 
 	var glyf, hmtx []byte
 	_, hasGlyf := sfnt.Tables["glyf"]
