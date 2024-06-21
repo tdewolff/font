@@ -47,8 +47,8 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			}
 			for _, glyphID := range deps[1:] {
 				if _, ok := glyphMap[glyphID]; !ok {
-					glyphIDs = append(glyphIDs, glyphID)
 					glyphMap[glyphID] = uint16(len(glyphIDs))
+					glyphIDs = append(glyphIDs, glyphID)
 				}
 			}
 		}
