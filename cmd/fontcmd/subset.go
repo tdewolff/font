@@ -68,6 +68,7 @@ func (cmd *Subset) Run() error {
 			}
 			for first != last+1 {
 				glyphMap[uint16(first)] = true
+				first++
 			}
 		} else {
 			glyphID, err := strconv.ParseInt(glyph, 10, 16)
@@ -150,6 +151,7 @@ func (cmd *Subset) Run() error {
 				} else {
 					glyphMap[glyphID] = true
 				}
+				first++
 			}
 		} else {
 			codepoint, err := strconv.ParseInt(code, 16, 32)
