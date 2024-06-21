@@ -10,6 +10,7 @@ import (
 	"github.com/tdewolff/parse/v2"
 )
 
+// TODO: add method to regenerate subrs optimally (useful after subset)
 // TODO: use FDSelect for Font DICTs
 // TODO: CFF has winding rule even-odd? CFF2 has winding rule nonzero
 
@@ -1015,7 +1016,7 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 }
 
 // reindex subroutines in the order in which they appear and rearrange the global and local subroutines INDEX
-func (cff *cffTable) OptimizeSubrs() error {
+func (cff *cffTable) ReindexSubrs() error {
 	if 1 < len(cff.fonts.localSubrs) {
 		return fmt.Errorf("only single-font CFFs are supported")
 	}

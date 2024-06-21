@@ -24,7 +24,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 	if sfnt.IsCFF {
 		if _, ok := sfnt.Tables["CFF2"]; ok {
 			// TODO: support subsetting CFF2
-			return sfnt, nil
+			return nil, fmt.Errorf("subsetting CFF2 fonts not supported")
 		}
 	}
 
@@ -186,7 +186,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			}
 
 			// trim globalSubrs and localSubrs INDEX
-			if err := cff.OptimizeSubrs(); err != nil {
+			if err := cff.ReindexSubrs(); err != nil {
 				return nil, err
 			}
 
