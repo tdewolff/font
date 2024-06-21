@@ -105,6 +105,11 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 	for subsetGlyphID, glyphID := range glyphIDs {
 		advances[subsetGlyphID] = sfnt.Hmtx.Advance(glyphID)
 	}
+
+	// https://learn.microsoft.com/en-us/typography/opentype/spec/recom#hmtx-table
+	// It is recommended that for CFF fonts the numberOfHMetrics must be equal to the number
+	// of glyphs, but emperically there is no difference.
+	//if !sfnt.IsCFF {
 	numberOfHMetrics := uint16(len(glyphIDs)) // for hhea and hmtx
 	for 1 < numberOfHMetrics {
 		if advances[numberOfHMetrics-1] != advances[numberOfHMetrics-2] {
@@ -112,6 +117,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 		}
 		numberOfHMetrics--
 	}
+	//}
 
 	// copy to new SFNT
 	sfntOld := sfnt

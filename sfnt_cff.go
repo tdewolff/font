@@ -375,12 +375,6 @@ func (cff *cffTable) getSubroutine(glyphID uint16, b0 int32, stack int32) (int32
 	return index, subr, nil
 }
 
-//type cffCallStack struct {
-//	s *cffINDEX
-//	k uint16 // index into index.offset
-//	r *parse.BinaryReader
-//}
-
 func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader, int32, []int32) error) error {
 	table := "CFF"
 	if cff.version == 2 {
@@ -398,7 +392,7 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader
 	r := parse.NewBinaryReader(charString)
 
 	hints := 0
-	stack := []int32{} // TODO: may overflow?
+	stack := []int32{}
 	beforeMoveto := true
 	for {
 		if cff.version == 2 && r.Len() == 0 && 0 < len(callStack) {
