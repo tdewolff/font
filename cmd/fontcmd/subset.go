@@ -251,7 +251,8 @@ func (cmd *Subset) Run() error {
 			ratio = float64(wLen) / float64(rLen)
 		}
 		if !cmd.Quiet && output != "-" {
-			fmt.Printf("%v:  %v => %v glyphs,  %v => %v (%.1f%%)\n", filepath.Base(output), numGlyphs, len(glyphIDs), formatBytes(uint64(rLen)), formatBytes(uint64(wLen)), ratio*100.0)
+			numGlyphsSubset := sfntSubset.NumGlyphs()
+			fmt.Printf("%v:  %v => %v glyphs,  %v => %v (%.1f%%)\n", filepath.Base(output), numGlyphs, numGlyphsSubset, formatBytes(uint64(rLen)), formatBytes(uint64(wLen)), ratio*100.0)
 		}
 	}
 	return nil
