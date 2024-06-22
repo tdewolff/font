@@ -1165,6 +1165,7 @@ func (t *cffINDEX) AddSID(data []byte) int {
 			return i
 		}
 	}
+	// warning: this may become 65000 or larger which is not strictly allowed
 	return t.Add(data) + len(cffStandardStrings)
 }
 
@@ -2114,7 +2115,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 				if maxNLeft < nLeft {
 					maxNLeft = nLeft
 				}
-				ranges = append(ranges, [2]uint16{uint16(lastStart), uint16(nLeft)})
+				ranges = append(ranges, [2]uint16{uint16(sids[lastStart]), uint16(nLeft)})
 				lastStart = i
 			}
 		}
@@ -2123,7 +2124,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 			if maxNLeft < nLeft {
 				maxNLeft = nLeft
 			}
-			ranges = append(ranges, [2]uint16{uint16(lastStart), uint16(nLeft)})
+			ranges = append(ranges, [2]uint16{uint16(sids[lastStart]), uint16(nLeft)})
 		}
 
 		nLeftSize := 1
@@ -2133,7 +2134,7 @@ func (cff *cffTable) Write() ([]byte, error) {
 
 		// write charset data for either format 0 or format 1/2, whichever is smaller
 		charset = parse.NewBinaryWriter([]byte{})
-		if 2*(numGlyphs-1) < len(ranges)*(2+nLeftSize) {
+		if 2*(numGlyphs-1) <= len(ranges)*(2+nLeftSize) {
 			// format 0
 			charset.WriteUint8(0)
 			for _, sid := range sids {
