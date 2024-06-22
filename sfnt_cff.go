@@ -2032,33 +2032,6 @@ func parseFontINDEX(b []byte, fdArray, fdSelect, nGlyphs int, isCFF2 bool) (*cff
 	return fonts, nil
 }
 
-// return added size when appending an offset to a dict, including the size of the offset number
-// in the DICT
-func cffDICTAppendedOffsetSize(offset int) int {
-	nInt := 5
-	if offset+1 <= 107 {
-		nInt = 1
-	} else if 108 <= offset+2 && offset+2 <= 1131 {
-		nInt = 2
-	} else if offset+3 <= 32767 {
-		nInt = 3
-	}
-
-	_, nFloat := cffDICTFloat(float64(offset))
-	if nInt < nFloat {
-		return nInt
-	}
-	for {
-		// length may increase as offset moves further
-		oldNFloat := nFloat
-		_, nFloat = cffDICTFloat(float64(offset + nFloat))
-		if nFloat == oldNFloat {
-			break
-		}
-	}
-	return nFloat
-}
-
 func (cff *cffTable) Write() ([]byte, error) {
 	if cff.version != 1 {
 		return nil, fmt.Errorf("unsupported version: %d", cff.version)
@@ -2159,28 +2132,29 @@ func (cff *cffTable) Write() ([]byte, error) {
 			}
 
 			// write offset to Private DICT
-			localSubrsOffset = len(privateDICT) + 1                         // key
-			localSubrsOffset += cffDICTAppendedOffsetSize(localSubrsOffset) // val
+			localSubrsOffset = len(privateDICT) + 1                  // key
+			localSubrsOffset += cffDICTIntegerSize(localSubrsOffset) // val
 			wPrivate := parse.NewBinaryWriter(privateDICT)
 			writeDICTEntry(wPrivate, 19, localSubrsOffset)
 			privateDICT = wPrivate.Bytes()
 		}
 	}
 
-	// the charStringsOffset and privateOffset values in Top DICT can each occupy a maximum of
-	// 6 bytes (key + operator + uint32). The Top DICT INDEX takes 2 + 1 + 2*offSize + len(data)
-	maxTopDICT := len(topDICT)
+	// The offset values in Top DICT may push down the offsets themselves. Calculate the size
+	// of Top DICT and thus the positions of each offset without the offset values in Top DICT
+	// and then iteratively recalculate the offsets when added to Top DICT
+	lenTopDICT := len(topDICT)
 	if charset != nil {
-		maxTopDICT += 1 + 5 // key, offset
+		lenTopDICT += 1 // key
 	}
-	maxTopDICT += 1 + 5 // key and offset
+	lenTopDICT += 1 // charStrings key
 	if privateDICT != nil {
-		maxTopDICT += 1 + cffDICTNumberSize(len(privateDICT)) + 5 // key, size, and offset
+		lenTopDICT += 1 + cffDICTIntegerSize(len(privateDICT)) // key and size
 	}
-	maxTopDICTINDEXOffSize := cffINDEXOffSize(maxTopDICT)
-	maxTopDICTINDEX := 3 + 2*maxTopDICTINDEXOffSize + maxTopDICT
+	lenTopDICTINDEXOffSize := cffINDEXOffSize(lenTopDICT)
+	lenTopDICTINDEX := 3 + 2*lenTopDICTINDEXOffSize + lenTopDICT
 
-	offset := int(w.Len()) + maxTopDICTINDEX + len(stringINDEX) // no overflow
+	offset := int(w.Len()) + lenTopDICTINDEX + len(stringINDEX) // no overflow
 	if math.MaxInt32-offset < len(globalSubrsINDEX) {
 		return nil, fmt.Errorf("size too large")
 	}
@@ -2200,23 +2174,23 @@ func (cff *cffTable) Write() ([]byte, error) {
 	}
 	privateOffset := charStringsOffset + len(charStringsINDEX)
 
-	// correct for maximum offset calculated above
+	// correct for offset calculated above (grow Top DICT)
 	correct, prevCorrect := 0, -1
 	for correct != prevCorrect {
 		prevCorrect = correct
 		correct = 0
 		if charset != nil {
-			correct += 5 - cffDICTAppendedOffsetSize(charsetOffset-correct) // number length in DICT
+			correct += cffDICTIntegerSize(charsetOffset + correct) // integer length in DICT
 		}
-		correct += 5 - cffDICTAppendedOffsetSize(charStringsOffset-correct) // number length in DICT
+		correct += cffDICTIntegerSize(charStringsOffset + correct) // integer length in DICT
 		if privateDICT != nil {
-			correct += 5 - cffDICTAppendedOffsetSize(privateOffset-correct) // number length in DICT
+			correct += cffDICTIntegerSize(privateOffset + correct) // integer length in DICT
 		}
-		correct += maxTopDICTINDEXOffSize - cffINDEXOffSize(maxTopDICT-correct) // offSize in INDEX
+		correct += cffINDEXOffSize(lenTopDICT+correct) - lenTopDICTINDEXOffSize // offSize in INDEX
 	}
-	charsetOffset -= correct
-	charStringsOffset -= correct
-	privateOffset -= correct
+	charsetOffset += correct
+	charStringsOffset += correct
+	privateOffset += correct
 
 	// write offsets to Top DICT
 	wTop := parse.NewBinaryWriter(topDICT)
