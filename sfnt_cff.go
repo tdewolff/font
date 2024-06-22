@@ -878,28 +878,26 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 					return err
 				}
 
-				mapped := true
+				mapped := false
 				var oldBias int32
 				var newIndex, newBias int32
 				if b0 == cffCallsubr {
-					if _, ok := localSubrsMap[oldIndex]; !ok {
-						mapped = false
+					if v, ok := localSubrsMap[oldIndex]; ok {
+						oldBias = oldLocalSubrsBias
+						newIndex = v
+						newBias = localSubrsBias
+						mapped = true
 					}
-					oldBias = oldLocalSubrsBias
-					newIndex = localSubrsMap[oldIndex]
-					newBias = localSubrsBias
-				} else if b0 == cffCallgsubr {
-					if _, ok := globalSubrsMap[oldIndex]; !ok {
-						mapped = false
+				} else {
+					if v, ok := globalSubrsMap[oldIndex]; ok {
+						oldBias = oldGlobalSubrsBias
+						newIndex = v
+						newBias = globalSubrsBias
+						mapped = true
 					}
-					oldBias = oldGlobalSubrsBias
-					newIndex = globalSubrsMap[oldIndex]
-					newBias = globalSubrsBias
 				}
 
 				if skipDepth == 0 && mapped && oldIndex != newIndex {
-					// create the new charString encoded subrs index number
-					// the INDEX data never grows
 					lenNumber := uint32(cffNumberSize(int(oldIndex - oldBias)))
 					posNumber := r.Pos() - 1 - lenNumber // -1 as we're past the operator
 
@@ -1021,40 +1019,46 @@ func (cff *cffTable) ReindexSubrs() error {
 		return fmt.Errorf("only single-font CFFs are supported")
 	}
 
-	// construct subroutine index mapping
-	localSubrs := &cffINDEX{}          // new INDEX
-	globalSubrs := &cffINDEX{}         // new INDEX
-	var localSubrsMap map[int32]int32  // old to new index
-	var globalSubrsMap map[int32]int32 // old to new index
+	// find used subroutines
+	skipDepth := 0
 	numGlyphs := uint16(cff.charStrings.Len())
+	localSubrsIndices := []int32{}
+	localSubrsData := map[int32][]byte{}
+	localSubrsCount := map[int32]int{}
+	globalSubrsIndices := []int32{}
+	globalSubrsData := map[int32][]byte{}
+	globalSubrsCount := map[int32]int{}
 	for glyphID := uint16(0); glyphID < numGlyphs; glyphID++ {
 		err := cff.parseCharString(glyphID, func(_ *parse.BinaryReader, b0 int32, stack []int32) error {
 			if b0 == cffCallsubr || b0 == cffCallgsubr {
-				if len(stack) == 0 {
+				if 0 < skipDepth {
+					// don't process subroutines twice
+					skipDepth++
+					return nil
+				} else if len(stack) == 0 {
 					return ErrBadNumOperands
 				}
 
-				oldIndex, subr, err := cff.getSubroutine(glyphID, b0, stack[len(stack)-1])
+				index, subr, err := cff.getSubroutine(glyphID, b0, stack[len(stack)-1])
 				if err != nil {
 					return err
 				}
-
 				if b0 == cffCallsubr {
-					if localSubrsMap == nil {
-						localSubrsMap = map[int32]int32{}
+					if _, ok := localSubrsCount[index]; !ok {
+						localSubrsIndices = append(localSubrsIndices, index)
+						localSubrsData[index] = subr
 					}
-					if _, ok := localSubrsMap[oldIndex]; !ok {
-						newIndex := localSubrs.Add(subr) // copies data
-						localSubrsMap[oldIndex] = int32(newIndex)
-					}
+					localSubrsCount[index] = localSubrsCount[index] + 1
 				} else {
-					if globalSubrsMap == nil {
-						globalSubrsMap = map[int32]int32{}
+					if _, ok := globalSubrsCount[index]; !ok {
+						globalSubrsIndices = append(globalSubrsIndices, index)
+						globalSubrsData[index] = subr
 					}
-					if _, ok := globalSubrsMap[oldIndex]; !ok {
-						newIndex := globalSubrs.Add(subr) // copies data
-						globalSubrsMap[oldIndex] = int32(newIndex)
-					}
+					globalSubrsCount[index] = globalSubrsCount[index] + 1
+				}
+			} else if b0 == cffReturn {
+				if 0 < skipDepth {
+					skipDepth--
 				}
 			}
 			return nil
@@ -1062,6 +1066,34 @@ func (cff *cffTable) ReindexSubrs() error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// sort descending
+	sort.SliceStable(localSubrsIndices, func(i, j int) bool {
+		return localSubrsCount[localSubrsIndices[j]] < localSubrsCount[localSubrsIndices[i]]
+	})
+	sort.SliceStable(globalSubrsIndices, func(i, j int) bool {
+		return globalSubrsCount[globalSubrsIndices[j]] < globalSubrsCount[globalSubrsIndices[i]]
+	})
+
+	// construct subroutine index mapping
+	localSubrs := &cffINDEX{}          // new INDEX
+	globalSubrs := &cffINDEX{}         // new INDEX
+	var localSubrsMap map[int32]int32  // old to new index
+	var globalSubrsMap map[int32]int32 // old to new index
+	if 0 < len(localSubrsIndices) {
+		localSubrsMap = map[int32]int32{}
+	}
+	if 0 < len(globalSubrsIndices) {
+		globalSubrsMap = map[int32]int32{}
+	}
+	for _, oldIndex := range localSubrsIndices {
+		newIndex := localSubrs.Add(localSubrsData[oldIndex]) // copies data
+		localSubrsMap[oldIndex] = int32(newIndex)
+	}
+	for _, oldIndex := range globalSubrsIndices {
+		newIndex := globalSubrs.Add(globalSubrsData[oldIndex]) // copies data
+		globalSubrsMap[oldIndex] = int32(newIndex)
 	}
 
 	// update subrs indices in charStrings for all glyphs and their subroutines
