@@ -1369,7 +1369,7 @@ func parseTopDICT(b []byte, stringINDEX *cffINDEX) (*cffTopDICT, error) {
 		case 256 + 8:
 			dict.StrokeWidth = fs[0]
 		case 14:
-			dict.XUID = is
+			dict.XUID = append([]int{}, is...)
 		case 15:
 			dict.Charset = is[0]
 		case 16:
@@ -1387,7 +1387,7 @@ func parseTopDICT(b []byte, stringINDEX *cffINDEX) (*cffTopDICT, error) {
 		case 256 + 22:
 			dict.BaseFontName = stringINDEX.GetSID(is[0])
 		case 256 + 23:
-			dict.BaseFontBlend = is
+			dict.BaseFontBlend = append([]int{}, is...)
 		case 256 + 30:
 			// TODO: it is unclear how the ROS operator influences the GIDs/CIDs
 			dict.IsCID = true
@@ -1560,16 +1560,16 @@ func parsePrivateDICT(b []byte, isCFF2 bool) (*cffPrivateDICT, error) {
 		ExpansionFactor: 0.06,
 	}
 
-	return dict, parseDICT(b, isCFF2, func(b0 int, is []int, fs []float64) bool {
+	err := parseDICT(b, isCFF2, func(b0 int, is []int, fs []float64) bool {
 		switch b0 {
 		case 6:
-			dict.BlueValues = fs
+			dict.BlueValues = append([]float64{}, fs...)
 		case 7:
-			dict.OtherBlues = fs
+			dict.OtherBlues = append([]float64{}, fs...)
 		case 8:
-			dict.FamilyBlues = fs
+			dict.FamilyBlues = append([]float64{}, fs...)
 		case 9:
-			dict.FamilyOtherBlues = fs
+			dict.FamilyOtherBlues = append([]float64{}, fs...)
 		case 256 + 9:
 			dict.BlueScale = fs[0]
 		case 256 + 10:
@@ -1581,9 +1581,9 @@ func parsePrivateDICT(b []byte, isCFF2 bool) (*cffPrivateDICT, error) {
 		case 11:
 			dict.StdVW = fs[0]
 		case 256 + 12:
-			dict.StemSnapH = fs
+			dict.StemSnapH = append([]float64{}, fs...)
 		case 256 + 13:
-			dict.StemSnapV = fs
+			dict.StemSnapV = append([]float64{}, fs...)
 		case 256 + 14:
 			dict.ForceBold = is[0] != 0
 		case 256 + 17:
@@ -1601,12 +1601,13 @@ func parsePrivateDICT(b []byte, isCFF2 bool) (*cffPrivateDICT, error) {
 		case 22:
 			dict.Vsindex = is[0]
 		case 23:
-			dict.Blend = fs
+			dict.Blend = append([]float64{}, fs...)
 		default:
 			return false
 		}
 		return true
 	})
+	return dict, err
 }
 
 func (t *cffPrivateDICT) Write() ([]byte, error) {
@@ -1749,7 +1750,7 @@ func parseDICT(b []byte, isCFF2 bool, callback func(b0 int, is []int, fs []float
 			if math.IsNaN(f) {
 				f = float64(i)
 			} else {
-				i = int(f + 0.5)
+				i = int(math.Round(f))
 			}
 			ints = append(ints, i)
 			reals = append(reals, f)
@@ -1819,7 +1820,7 @@ func cffDICTNumber(val any) (int, float64, bool, bool) {
 		var i int
 		isFrac := false
 		if integer, frac := math.Modf(v); frac == 0.0 {
-			i = int(integer + 0.5)
+			i = int(integer)
 		} else {
 			isFrac = true
 		}
@@ -1831,6 +1832,9 @@ func cffDICTNumber(val any) (int, float64, bool, bool) {
 
 func cffDICTFloat(f float64) ([]byte, int) {
 	floatNibbles := strconv.AppendFloat([]byte{}, f, 'G', 6, 64)
+	if 1 < len(floatNibbles) && floatNibbles[0] == '0' && floatNibbles[1] == '.' {
+		floatNibbles = floatNibbles[1:]
+	}
 	n := int(math.Ceil(float64(len(floatNibbles)+1)/2.0) + 0.5) // includes end nibbles
 	return floatNibbles, 1 + n                                  // key and value
 }
