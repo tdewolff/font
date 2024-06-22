@@ -2092,9 +2092,10 @@ func (cff *cffTable) Write() ([]byte, error) {
 	}
 
 	var charset *parse.BinaryWriter
+	numGlyphs := cff.charStrings.Len()
 	if cff.charset != nil {
+		// TODO: check if different format may result in smaller size
 		first := strings.Len()
-		numGlyphs := cff.charStrings.Len()
 		if len(cff.charset) != numGlyphs {
 			return nil, fmt.Errorf("charset length must match number of glyphs")
 		}
@@ -2114,6 +2115,8 @@ func (cff *cffTable) Write() ([]byte, error) {
 			// TODO: use AddSID, which may distort the order of SIDs but makes the file smaller
 			strings.Add([]byte(name))
 		}
+	} else if 229 < numGlyphs {
+		return nil, fmt.Errorf("charset must be set explicitly for more than 229 glyphs")
 	}
 
 	stringINDEX, err := strings.Write()

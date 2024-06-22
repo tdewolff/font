@@ -24,7 +24,7 @@ type Subset struct {
 	Index         int      `short:"i" desc:"Index into font collection (used with TTC or OTC)."`
 	Type          string   `short:"t" desc:"Explicitly set output mimetype, eg. font/woff2."`
 	Encoding      string   `short:"e" desc:"Output encoding, either empty of base64."`
-	GlyphName     string   `desc:"New glyph name. Available variables: %i glyph ID, %n glyph name, %u glyph unicode in hexadecimal."`
+	GlyphName     string   `default:"%n" desc:"New glyph name. Available variables: %i glyph ID, %n glyph name, %u glyph unicode in hexadecimal."`
 	Outputs       []string `short:"o" desc:"Output font file (only TTF/OTF/WOFF2/TTC/OTC are supported). Can output multiple file."`
 	Input         string   `index:"0" desc:"Input font file."`
 }
