@@ -334,7 +334,7 @@ func cffReadCharStringNumber(r *parse.BinaryReader, b0 int32) int32 {
 		b1 := int32(r.ReadUint8())
 		v = (-(b0-251)*256 - b1 - 108) << 16
 	} else {
-		v = r.ReadInt32() // least-significant bits are fraction
+		v = r.ReadInt32() // least-significant 16 bits are fraction
 	}
 	return v
 }
@@ -960,53 +960,53 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 			return changes[i].start < changes[j].start
 		})
 
-		k := 1              // index into index.offset
-		offset := uint32(0) // index into index.data
-		shrunk := uint32(0) // total number of bytes shrunk
+		k := 1                                   // index into index.offset
+		offset := uint32(0)                      // index into index.data
+		diff := int32(0)                         // total number of bytes grown
+		data := make([]byte, 0, len(index.data)) // destination, usually same size or shrinks
 		for _, ch := range changes {
 			// update index.offset upto the current change
 			for k < len(index.offset) && index.offset[k] <= ch.start {
-				index.offset[k] -= shrunk
+				index.offset[k] = uint32(int32(index.offset[k]) + diff)
 				k++
 			}
-			if 0 < shrunk {
-				// move bytes before current change
-				copy(index.data[offset-shrunk:], index.data[offset:ch.start])
-			}
+
+			// move bytes before current change
+			data = append(data, index.data[offset:ch.start]...)
 
 			// write new number
-			wNum := parse.NewBinaryWriter(index.data[ch.start-shrunk : ch.start-shrunk])
+			n := len(data)
 			if -107 <= ch.index && ch.index <= 107 {
-				wNum.WriteUint8(uint8(ch.index + 139))
+				data = append(data, uint8(ch.index+139))
 			} else if 108 <= ch.index && ch.index <= 1131 {
 				ch.index -= 108
-				wNum.WriteUint8(uint8(ch.index/256 + 247))
-				wNum.WriteUint8(uint8(ch.index % 256))
+				data = append(data, uint8(ch.index/256+247))
+				data = append(data, uint8(ch.index%256))
 			} else if -1131 <= ch.index && ch.index <= -108 {
 				ch.index = -ch.index - 108
-				wNum.WriteUint8(uint8(ch.index/256 + 251))
-				wNum.WriteUint8(uint8(ch.index % 256))
+				data = append(data, uint8(ch.index/256+251))
+				data = append(data, uint8(ch.index%256))
 			} else if -32768 <= ch.index && ch.index <= 32767 {
-				wNum.WriteUint8(28)
-				wNum.WriteUint16(uint16(ch.index))
+				data = append(data, 28, uint8(ch.index>>8), uint8(ch.index))
 			} else {
-				wNum.WriteUint8(255)
-				wNum.WriteUint32(uint32(ch.index << 16)) // is Fixed with 16-bit fraction
+				return fmt.Errorf("subroutine index outside valid range")
 			}
 
+			diff += int32(len(data)-n) - int32(ch.end-ch.start)
 			offset = ch.end
-			shrunk += (ch.end - ch.start) - wNum.Len()
 		}
-		if 0 < shrunk {
-			// update index.offset upto the current change
+
+		// update index.offset upto the current change
+		if diff != 0 {
 			for k < len(index.offset) {
-				index.offset[k] -= shrunk
+				index.offset[k] = uint32(int32(index.offset[k]) + diff)
 				k++
 			}
-			// move bytes before current change
-			copy(index.data[offset-shrunk:], index.data[offset:])
-			index.data = index.data[:uint32(len(index.data))-shrunk]
 		}
+
+		// move bytes before current change
+		data = append(data, index.data[offset:]...)
+		index.data = data
 	}
 
 	// set new Subrs INDEX, charStrings already modified
