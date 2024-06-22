@@ -2094,26 +2094,65 @@ func (cff *cffTable) Write() ([]byte, error) {
 	var charset *parse.BinaryWriter
 	numGlyphs := cff.charStrings.Len()
 	if cff.charset != nil {
-		// TODO: check if different format may result in smaller size
-		first := strings.Len()
+		// TODO: reorder entries in charString sequentially to make this smaller
 		if len(cff.charset) != numGlyphs {
 			return nil, fmt.Errorf("charset length must match number of glyphs")
 		}
 
+		sids := make([]int, numGlyphs-1)
+		for i, name := range cff.charset[1:numGlyphs] {
+			sids[i] = strings.AddSID([]byte(name))
+		}
+
+		// count number of ranges and max values of nLeft
+		maxNLeft := 0
+		lastStart := 0
+		ranges := [][2]uint16{}
+		for i, sid := range sids {
+			if i != 0 && sid != sids[i-1]+1 {
+				nLeft := i - lastStart - 1
+				if maxNLeft < nLeft {
+					maxNLeft = nLeft
+				}
+				ranges = append(ranges, [2]uint16{uint16(lastStart), uint16(nLeft)})
+				lastStart = i
+			}
+		}
+		if 0 < len(sids) {
+			nLeft := len(sids) - lastStart - 1
+			if maxNLeft < nLeft {
+				maxNLeft = nLeft
+			}
+			ranges = append(ranges, [2]uint16{uint16(lastStart), uint16(nLeft)})
+		}
+
+		nLeftSize := 1
+		if 256 <= maxNLeft {
+			nLeftSize = 2
+		}
+
+		// write charset data for either format 0 or format 1/2, whichever is smaller
 		charset = parse.NewBinaryWriter([]byte{})
-		if 257 < numGlyphs {
+		if 2*(numGlyphs-1) < len(ranges)*(2+nLeftSize) {
+			// format 0
+			charset.WriteUint8(0)
+			for _, sid := range sids {
+				charset.WriteUint16(uint16(sid))
+			}
+		} else if nLeftSize == 1 {
+			// format 1
+			charset.WriteUint8(1)
+			for _, ran := range ranges {
+				charset.WriteUint16(ran[0])
+				charset.WriteUint8(uint8(ran[1]))
+			}
+		} else {
 			// format 2
 			charset.WriteUint8(2)
-			charset.WriteUint16(uint16(first + len(cffStandardStrings)))
-			charset.WriteUint16(uint16(numGlyphs - 2))
-		} else {
-			charset.WriteUint8(1)
-			charset.WriteUint16(uint16(first + len(cffStandardStrings)))
-			charset.WriteUint8(uint8(numGlyphs - 2))
-		}
-		for _, name := range cff.charset[1:numGlyphs] {
-			// TODO: use AddSID, which may distort the order of SIDs but makes the file smaller
-			strings.Add([]byte(name))
+			for _, ran := range ranges {
+				charset.WriteUint16(ran[0])
+				charset.WriteUint16(ran[1])
+			}
 		}
 	} else if 229 < numGlyphs {
 		return nil, fmt.Errorf("charset must be set explicitly for more than 229 glyphs")
