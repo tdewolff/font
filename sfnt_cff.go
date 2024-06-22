@@ -1777,20 +1777,20 @@ func parseDICTNumber(b0 int, r *parse.BinaryReader) (int, float64) {
 	return 0, math.NaN()
 }
 
-// returns: integer, float, useFloat, ok
+// returns: integer, float, isFrac, ok
 func cffDICTNumber(val any) (int, float64, bool, bool) {
 	switch v := val.(type) {
 	case int:
 		return v, float64(v), false, true
 	case float64:
 		var i int
-		useFloat := false
+		isFrac := false
 		if integer, frac := math.Modf(v); frac == 0.0 {
 			i = int(integer + 0.5)
 		} else {
-			useFloat = true
+			isFrac = true
 		}
-		return i, v, useFloat, true
+		return i, v, isFrac, true
 	default:
 		return 0, 0.0, false, false
 	}
@@ -1800,22 +1800,6 @@ func cffDICTFloat(f float64) ([]byte, int) {
 	floatNibbles := strconv.AppendFloat([]byte{}, f, 'G', 6, 64)
 	n := int(math.Ceil(float64(len(floatNibbles)+1)/2.0) + 0.5) // includes end nibbles
 	return floatNibbles, 1 + n                                  // key and value
-}
-
-func cffDICTNumberSize(v any) int {
-	i, f, useFloat, ok := cffDICTNumber(v)
-	if !ok {
-		return 0
-	}
-	_, nFloat := cffDICTFloat(f)
-	if useFloat {
-		return nFloat
-	}
-	nInt := cffDICTIntegerSize(i)
-	if nFloat < nInt {
-		return nFloat
-	}
-	return nInt
 }
 
 func cffDICTIntegerSize(i int) int {
@@ -1841,14 +1825,23 @@ func writeDICTEntry(w *parse.BinaryWriter, op int, vals ...any) error {
 		return fmt.Errorf("too many operands")
 	}
 
+	allowFloat := false
+	if 5 <= op && op <= 11 || op == 20 || op == 21 || 255+2 <= op && op <= 255+4 || 255+7 <= op && op <= 255+13 || op == 255+18 || op == 255+23 {
+		// strictly most operators allow a number and thus an integer or real operand but in
+		// practice these are offsets (and thus integers) and some parsers expect them to be
+		// integers (even though a float may be shorter for e.g. 32790 (3 bytes) instead of
+		// 4 bytes for an integer
+		allowFloat = true
+	}
+
 	for _, val := range vals {
-		i, f, useFloat, ok := cffDICTNumber(val)
+		i, f, isFrac, ok := cffDICTNumber(val)
 		if !ok {
 			return fmt.Errorf("unknown operand type: %T", val)
 		}
 
 		floatNibbles, nFloat := cffDICTFloat(f)
-		if useFloat || nFloat < cffDICTIntegerSize(i) {
+		if allowFloat && (isFrac || nFloat < cffDICTIntegerSize(i)) {
 			n := 0
 			var b uint8
 			w.WriteUint8(30)
@@ -1882,6 +1875,8 @@ func writeDICTEntry(w *parse.BinaryWriter, op int, vals ...any) error {
 			} else {
 				w.WriteUint8(0xFF)
 			}
+		} else if isFrac {
+			return fmt.Errorf("unexpected real operand for operator %v: %v", op, val)
 		} else if -107 <= i && i <= 107 {
 			w.WriteUint8(uint8(i + 139))
 		} else if 108 <= i && i <= 1131 {
