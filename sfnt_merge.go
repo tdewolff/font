@@ -333,7 +333,7 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 			}
 		}
 
-		sfnt.Tables["cmap"] = cmapWriteFormat12(rs, runeMap)
+		sfnt.Tables["cmap"] = cmapWrite(rs, runeMap)
 		if err := sfnt.parseCmap(); err != nil {
 			return err
 		}

@@ -145,6 +145,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 		}
 
 		switch tag {
+		// TODO: GDEF, GPOS, GSUB
 		case "cmap":
 			rs := make([]rune, 0, len(glyphIDs))
 			runeMap := make(map[rune]uint16, len(glyphIDs)) // for OS/2
@@ -156,7 +157,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			}
 			ulUnicodeRange = os2UlUnicodeRange(rs)
 
-			sfnt.Tables[tag] = cmapWriteFormat12(rs, runeMap)
+			sfnt.Tables[tag] = cmapWrite(rs, runeMap)
 			if err := sfnt.parseCmap(); err != nil {
 				return nil, err
 			}

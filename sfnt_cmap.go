@@ -150,52 +150,167 @@ func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
 	return r, ok
 }
 
-func cmapWriteFormat12(rs []rune, runeMap map[rune]uint16) []byte {
-	w := parse.NewBinaryWriter([]byte{})
-	w.WriteUint16(0)  // version
-	w.WriteUint16(1)  // numTables
-	w.WriteUint16(0)  // platformID
-	w.WriteUint16(4)  // encodingID
-	w.WriteUint32(12) // subtableOffset
+func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16) {
+	data := cmapFormat4{}
+	glyphIDs := []uint16{runeMap[rs[0]]}
+	data.StartCode = append(data.StartCode, uint16(rs[0]))
+	for i := 1; i <= len(rs); i++ {
+		if i == len(rs) || rs[i-1]+1 != rs[i] {
+			data.EndCode = append(data.EndCode, uint16(rs[i-1]))
 
-	// format 12
+			// TODO: find subsets that may be contiguous, for at least 5 glyphs in a row
+			contiguous := true
+			for j := 1; j < len(glyphIDs); j++ {
+				if glyphIDs[j-1]+1 != glyphIDs[j] {
+					contiguous = false
+					break
+				}
+			}
+			if contiguous {
+				// use idDelta
+				firstCode := data.StartCode[len(data.StartCode)-1]
+				firstGlyph := glyphIDs[0]
+				delta := int(firstGlyph) - int(firstCode)
+				if math.MaxInt16 < delta {
+					delta -= 65536
+				} else if delta < math.MinInt16 {
+					delta += 65536
+				}
+				data.IdDelta = append(data.IdDelta, int16(delta))
+				data.IdRangeOffset = append(data.IdRangeOffset, 0)
+			} else {
+				// use idRangeOffset
+				// set the value of IdRangeOffset to the offset in GlyphIdArray, updated below
+				data.IdDelta = append(data.IdDelta, 0)
+				data.IdRangeOffset = append(data.IdRangeOffset, uint16(len(data.GlyphIdArray)))
+				data.GlyphIdArray = append(data.GlyphIdArray, glyphIDs...)
+			}
+			if i == len(rs) {
+				break
+			}
+
+			glyphIDs = glyphIDs[:0]
+			data.StartCode = append(data.StartCode, uint16(rs[i]))
+		}
+		glyphIDs = append(glyphIDs, runeMap[rs[i]])
+	}
+	if rs[len(rs)-1] != 0xFFFF {
+		data.StartCode = append(data.StartCode, 0xFFFF)
+		data.EndCode = append(data.EndCode, 0xFFFF)
+		data.IdDelta = append(data.IdDelta, 1) // (1+0xFFFF)%65536=0 (map to .notdef)
+		data.IdRangeOffset = append(data.IdRangeOffset, 0)
+	}
+
+	start := w.Len()
+	w.WriteUint16(4) // format
+	w.WriteUint16(0) // length (set later)
+	w.WriteUint16(0) // language
+
+	segCount := uint16(len(data.StartCode))
+	searchRange := uint16(math.Exp2(math.Floor(math.Log2(float64(segCount)))))
+	entrySelector := uint16(math.Log2(float64(searchRange)))
+	w.WriteUint16(segCount * 2)                 // segCountX2
+	w.WriteUint16(searchRange * 2)              // searchRange
+	w.WriteUint16(entrySelector)                // entrySelector
+	w.WriteUint16((segCount - searchRange) * 2) // rangeShift
+
+	for _, endCode := range data.EndCode {
+		w.WriteUint16(endCode)
+	}
+	w.WriteUint16(0) // reservedPad
+	for _, startCode := range data.StartCode {
+		w.WriteUint16(startCode)
+	}
+	for _, idDelta := range data.IdDelta {
+		w.WriteInt16(idDelta)
+	}
+	for i, idRangeOffset := range data.IdRangeOffset {
+		if data.IdDelta[i] != 0 {
+			w.WriteUint16(0)
+		} else {
+			glyphIdArrayStart := uint16(len(data.IdRangeOffset) - i)
+			w.WriteUint16((glyphIdArrayStart + idRangeOffset) * 2) // times 2 since entries are 16 bit
+		}
+	}
+	for _, glyphID := range data.GlyphIdArray {
+		w.WriteUint16(glyphID)
+	}
+
+	// TODO: subtable may exceed the range of the length field (16 bits, or 65536 bytes long)
+	binary.BigEndian.PutUint16(w.Bytes()[start+2:], uint16(w.Len()-start)) // set length
+}
+
+func cmapWriteFormat12(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16) {
 	start := w.Len()
 	w.WriteUint16(12) // format
 	w.WriteUint16(0)  // reserved
-	w.WriteUint32(16) // length (updated later)
+	w.WriteUint32(0)  // length (set later)
 	w.WriteUint32(0)  // language
 	w.WriteUint32(0)  // numGroups (set later)
 
-	if 0 < len(rs) {
-		sort.Slice(rs, func(i, j int) bool { return rs[i] < rs[j] })
-
-		numGroups := uint32(1)
-		startCharCode := uint32(rs[0])
-		startGlyphID := uint32(runeMap[rs[0]])
-		n := uint32(1)
-		for i := 1; i < len(rs); i++ {
-			r := rs[i]
-			subsetGlyphID := runeMap[r]
-			if r == rs[i-1] {
-				continue
-			} else if uint32(r) == startCharCode+n && uint32(subsetGlyphID) == startGlyphID+n {
-				n++
-			} else {
-				w.WriteUint32(uint32(startCharCode))         // startCharCode
-				w.WriteUint32(uint32(startCharCode + n - 1)) // endCharCode
-				w.WriteUint32(uint32(startGlyphID))          // startGlyphID
-				numGroups++
-				startCharCode = uint32(r)
-				startGlyphID = uint32(subsetGlyphID)
-				n = 1
-			}
+	numGroups := uint32(1)
+	startCharCode := uint32(rs[0])
+	startGlyphID := uint32(runeMap[rs[0]])
+	n := uint32(1)
+	for i := 1; i < len(rs); i++ {
+		r := rs[i]
+		subsetGlyphID := runeMap[r]
+		if r == rs[i-1] {
+			continue
+		} else if uint32(r) == startCharCode+n && uint32(subsetGlyphID) == startGlyphID+n {
+			n++
+		} else {
+			w.WriteUint32(uint32(startCharCode))         // startCharCode
+			w.WriteUint32(uint32(startCharCode + n - 1)) // endCharCode
+			w.WriteUint32(uint32(startGlyphID))          // startGlyphID
+			numGroups++
+			startCharCode = uint32(r)
+			startGlyphID = uint32(subsetGlyphID)
+			n = 1
 		}
-		w.WriteUint32(uint32(startCharCode))         // startCharCode
-		w.WriteUint32(uint32(startCharCode + n - 1)) // endCharCode
-		w.WriteUint32(uint32(startGlyphID))          // startGlyphID
+	}
+	w.WriteUint32(uint32(startCharCode))         // startCharCode
+	w.WriteUint32(uint32(startCharCode + n - 1)) // endCharCode
+	w.WriteUint32(uint32(startGlyphID))          // startGlyphID
 
-		binary.BigEndian.PutUint32(w.Bytes()[start+4:], w.Len()-start) // set length
-		binary.BigEndian.PutUint32(w.Bytes()[start+12:], numGroups)    // set numGroups
+	binary.BigEndian.PutUint32(w.Bytes()[start+4:], w.Len()-start) // set length
+	binary.BigEndian.PutUint32(w.Bytes()[start+12:], numGroups)    // set numGroups
+}
+
+func cmapWrite(rs []rune, runeMap map[rune]uint16) []byte {
+	if len(rs) == 0 {
+		return []byte{0x00, 0x00, 0x00, 0x00}
+	}
+
+	sort.Slice(rs, func(i, j int) bool { return rs[i] < rs[j] })
+
+	// TODO: it may be more efficient to have several tables of different formats
+	w := parse.NewBinaryWriter([]byte{})
+	w.WriteUint16(0) // version
+	w.WriteUint16(2) // numTables, we specify 2 encodings for the same subtable
+
+	var maxRune rune
+	for _, r := range rs {
+		if maxRune < r {
+			maxRune = r
+		}
+	}
+	if maxRune <= 0xffff {
+		w.WriteUint16(0)  // platformID
+		w.WriteUint16(3)  // encodingID
+		w.WriteUint32(20) // subtableOffset
+		w.WriteUint16(3)  // platformID
+		w.WriteUint16(1)  // encodingID
+		w.WriteUint32(20) // subtableOffset
+		cmapWriteFormat4(w, rs, runeMap)
+	} else {
+		w.WriteUint16(0)  // platformID
+		w.WriteUint16(4)  // encodingID
+		w.WriteUint32(20) // subtableOffset
+		w.WriteUint16(3)  // platformID
+		w.WriteUint16(10) // encodingID
+		w.WriteUint32(20) // subtableOffset
+		cmapWriteFormat12(w, rs, runeMap)
 	}
 	return w.Bytes()
 }
