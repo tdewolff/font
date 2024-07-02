@@ -152,53 +152,67 @@ func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
 
 func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16) {
 	data := cmapFormat4{}
+	addSegment := func(firstCode, lastCode rune, glyphIDs []uint16, contiguous bool) {
+		fmt.Printf("%X %X %v %v\n", firstCode, lastCode, contiguous, glyphIDs)
+		data.EndCode = append(data.EndCode, uint16(lastCode))
+		data.StartCode = append(data.StartCode, uint16(firstCode))
+		if contiguous {
+			// use idDelta
+			firstGlyph := glyphIDs[0]
+			delta := int(firstGlyph) - int(firstCode)
+			if math.MaxInt16 < delta {
+				delta -= 65536
+			} else if delta < math.MinInt16 {
+				delta += 65536
+			}
+			data.IdDelta = append(data.IdDelta, int16(delta))
+			data.IdRangeOffset = append(data.IdRangeOffset, 0)
+		} else {
+			// use idRangeOffset
+			// set the value of IdRangeOffset to the offset in GlyphIdArray, updated below
+			data.IdDelta = append(data.IdDelta, 0)
+			data.IdRangeOffset = append(data.IdRangeOffset, uint16(len(data.GlyphIdArray)))
+			data.GlyphIdArray = append(data.GlyphIdArray, glyphIDs...)
+		}
+	}
+
+	i0 := 0
 	glyphIDs := []uint16{runeMap[rs[0]]}
-	data.StartCode = append(data.StartCode, uint16(rs[0]))
 	for i := 1; i <= len(rs); i++ {
 		if i == len(rs) || rs[i-1]+1 != rs[i] {
-			data.EndCode = append(data.EndCode, uint16(rs[i-1]))
-
-			// TODO: find subsets that may be contiguous, for at least 5 glyphs in a row
-			contiguous := true
-			for j := 1; j < len(glyphIDs); j++ {
-				if glyphIDs[j-1]+1 != glyphIDs[j] {
-					contiguous = false
-					break
+			// Find subsets of glyphIDs that are contiguous for at least 9 glyphs in a row.
+			// Track index before which is already written as segment (j0) and track index
+			// before which glyph indices are not contiguous (jc). Write a new segments whenever we
+			// encounter a non-contiguous glyph ID (and writing a separate segment for the
+			// contiguous glyph IDs beforehand is worthwhile) or end-of-array. We have a stretch
+			// of non-contiguous glyph IDs followed by contiguous, one may be empty.
+			j0, jc := 0, 0
+			for j := 1; j <= len(glyphIDs); j++ {
+				if j == len(glyphIDs) || glyphIDs[j-1]+1 != glyphIDs[j] && 8 < j-jc {
+					if 8 < j-jc && j0 != jc {
+						addSegment(rs[i0+j0], rs[i0+(jc-1)], glyphIDs[j0:jc], false)
+						addSegment(rs[i0+jc], rs[i0+(j-1)], glyphIDs[jc:j], true)
+						j0, jc = j, j
+					} else if j == len(glyphIDs) {
+						addSegment(rs[i0+j0], rs[i0+(j-1)], glyphIDs[j0:j], j0 == jc)
+					}
+					if j == len(glyphIDs) {
+						break
+					}
+				} else if glyphIDs[j-1]+1 != glyphIDs[j] {
+					jc = j
 				}
-			}
-			if contiguous {
-				// use idDelta
-				firstCode := data.StartCode[len(data.StartCode)-1]
-				firstGlyph := glyphIDs[0]
-				delta := int(firstGlyph) - int(firstCode)
-				if math.MaxInt16 < delta {
-					delta -= 65536
-				} else if delta < math.MinInt16 {
-					delta += 65536
-				}
-				data.IdDelta = append(data.IdDelta, int16(delta))
-				data.IdRangeOffset = append(data.IdRangeOffset, 0)
-			} else {
-				// use idRangeOffset
-				// set the value of IdRangeOffset to the offset in GlyphIdArray, updated below
-				data.IdDelta = append(data.IdDelta, 0)
-				data.IdRangeOffset = append(data.IdRangeOffset, uint16(len(data.GlyphIdArray)))
-				data.GlyphIdArray = append(data.GlyphIdArray, glyphIDs...)
 			}
 			if i == len(rs) {
 				break
 			}
-
 			glyphIDs = glyphIDs[:0]
-			data.StartCode = append(data.StartCode, uint16(rs[i]))
+			i0 = i
 		}
 		glyphIDs = append(glyphIDs, runeMap[rs[i]])
 	}
 	if rs[len(rs)-1] != 0xFFFF {
-		data.StartCode = append(data.StartCode, 0xFFFF)
-		data.EndCode = append(data.EndCode, 0xFFFF)
-		data.IdDelta = append(data.IdDelta, 1) // (1+0xFFFF)%65536=0 (map to .notdef)
-		data.IdRangeOffset = append(data.IdRangeOffset, 0)
+		addSegment(0xFFFF, 0xFFFF, []uint16{0}, true) // map to .notdef
 	}
 
 	start := w.Len()
