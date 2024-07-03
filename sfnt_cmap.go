@@ -153,7 +153,6 @@ func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
 func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16) {
 	data := cmapFormat4{}
 	addSegment := func(firstCode, lastCode rune, glyphIDs []uint16, contiguous bool) {
-		fmt.Printf("%X %X %v %v\n", firstCode, lastCode, contiguous, glyphIDs)
 		data.EndCode = append(data.EndCode, uint16(lastCode))
 		data.StartCode = append(data.StartCode, uint16(firstCode))
 		if contiguous {
