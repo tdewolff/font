@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"sync"
 
 	"github.com/tdewolff/parse/v2"
 )
@@ -13,6 +14,7 @@ type cmapFormat0 struct {
 	GlyphIdArray [256]uint8
 
 	unicodeMap map[uint16]rune
+	once       sync.Once
 }
 
 func (subtable *cmapFormat0) Get(r rune) (uint16, bool) {
@@ -25,12 +27,13 @@ func (subtable *cmapFormat0) Get(r rune) (uint16, bool) {
 func (subtable *cmapFormat0) ToUnicode(glyphID uint16) (rune, bool) {
 	if 256 <= glyphID {
 		return 0, false
-	} else if subtable.unicodeMap == nil {
+	}
+	subtable.once.Do(func() {
 		subtable.unicodeMap = make(map[uint16]rune, 256)
 		for r, id := range subtable.GlyphIdArray {
 			subtable.unicodeMap[uint16(id)] = rune(r)
 		}
-	}
+	})
 	r, ok := subtable.unicodeMap[glyphID]
 	return r, ok
 }
@@ -43,6 +46,7 @@ type cmapFormat4 struct {
 	GlyphIdArray  []uint16
 
 	unicodeMap map[uint16]rune
+	once       sync.Once
 }
 
 func (subtable *cmapFormat4) Get(r rune) (uint16, bool) {
@@ -67,7 +71,7 @@ func (subtable *cmapFormat4) Get(r rune) (uint16, bool) {
 }
 
 func (subtable *cmapFormat4) ToUnicode(glyphID uint16) (rune, bool) {
-	if subtable.unicodeMap == nil {
+	subtable.once.Do(func() {
 		subtable.unicodeMap = map[uint16]rune{}
 		n := len(subtable.StartCode)
 		for i := 0; i < n; i++ {
@@ -88,7 +92,7 @@ func (subtable *cmapFormat4) ToUnicode(glyphID uint16) (rune, bool) {
 				}
 			}
 		}
-	}
+	})
 	r, ok := subtable.unicodeMap[glyphID]
 	return r, ok
 }
@@ -120,6 +124,7 @@ type cmapFormat12 struct {
 	StartGlyphID  []uint32
 
 	unicodeMap map[uint16]rune
+	once       sync.Once
 }
 
 func (subtable *cmapFormat12) Get(r rune) (uint16, bool) {
@@ -135,7 +140,7 @@ func (subtable *cmapFormat12) Get(r rune) (uint16, bool) {
 }
 
 func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
-	if subtable.unicodeMap == nil {
+	subtable.once.Do(func() {
 		subtable.unicodeMap = map[uint16]rune{}
 		for i := 0; i < len(subtable.StartCharCode); i++ {
 			for r := subtable.StartCharCode[i]; r <= subtable.EndCharCode[i]; r++ {
@@ -145,7 +150,7 @@ func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
 				}
 			}
 		}
-	}
+	})
 	r, ok := subtable.unicodeMap[glyphID]
 	return r, ok
 }

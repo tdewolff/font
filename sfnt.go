@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/tdewolff/parse/v2"
@@ -928,6 +929,7 @@ type postTable struct {
 	glyphNameIndex []uint16
 	stringData     [][]byte
 	nameMap        map[string]uint16
+	once           sync.Once
 }
 
 func (post *postTable) Get(glyphID uint16) string {
@@ -944,7 +946,7 @@ func (post *postTable) Get(glyphID uint16) string {
 }
 
 func (post *postTable) Find(name string) (uint16, bool) {
-	if post.nameMap == nil {
+	post.once.Do(func() {
 		post.nameMap = make(map[string]uint16, len(post.glyphNameIndex))
 		for glyphID, index := range post.glyphNameIndex {
 			if index < 258 {
@@ -953,8 +955,7 @@ func (post *postTable) Find(name string) (uint16, bool) {
 				post.nameMap[string(post.stringData[index-258])] = uint16(glyphID)
 			}
 		}
-	}
-
+	})
 	glyphID, ok := post.nameMap[name] // returns 0 if not found
 	return glyphID, ok
 }
