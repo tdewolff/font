@@ -71,6 +71,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			}
 		}
 	} else if len(options.Tables) == 1 && options.Tables[0] == "pdf" {
+		// good summary at http://www.4real.gr/technical-documents-ttf-subset.html
 		if sfnt.IsTrueType {
 			tags = append(tags, "DSIG", "glyf", "head", "hhea", "hmtx", "loca", "maxp")
 			for _, tag := range []string{"cvt ", "fpgm", "prep"} {
@@ -146,6 +147,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 
 		switch tag {
 		// TODO: GDEF, GPOS, GSUB
+		// TODO; cvt, fpgm, prep
 		case "cmap":
 			rs := make([]rune, 0, len(glyphIDs))
 			runeMap := make(map[rune]uint16, len(glyphIDs)) // for OS/2
