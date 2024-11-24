@@ -275,15 +275,16 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 				return nil, ErrInvalidFontData
 			}
 
+			// NOTE: checksum validation is disabled so as to parse broken fonts as best as possible
 			// to check checksum for head table, replace the overal checksum with zero and reset it at the end
-			checksumAdjustment := binary.BigEndian.Uint32(b[offset+8:])
-			binary.BigEndian.PutUint32(b[offset+8:], 0x00000000)
-			if calcChecksum(b[offset:offset+length+padding]) != checksum {
-				return nil, fmt.Errorf("%s: bad checksum", tag)
-			} else if 0xB1B0AFBA-calcChecksum(b) != checksumAdjustment {
-				return nil, fmt.Errorf("bad checksum")
-			}
-			binary.BigEndian.PutUint32(b[offset+8:], checksumAdjustment)
+			//checksumAdjustment := binary.BigEndian.Uint32(b[offset+8:])
+			//binary.BigEndian.PutUint32(b[offset+8:], 0x00000000)
+			//if calcChecksum(b[offset:offset+length+padding]) != checksum {
+			//	return nil, fmt.Errorf("%s: bad checksum", tag)
+			//} else if 0xB1B0AFBA-calcChecksum(b) != checksumAdjustment {
+			//	return nil, fmt.Errorf("bad checksum")
+			//}
+			//binary.BigEndian.PutUint32(b[offset+8:], checksumAdjustment)
 		} else if calcChecksum(b[offset:offset+length+padding]) != checksum {
 			return nil, fmt.Errorf("%s: bad checksum", tag)
 		}
