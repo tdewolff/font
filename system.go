@@ -31,6 +31,9 @@ func DefaultFontDirs() []string {
 		if xdgDataHome := os.Getenv("XDG_DATA_HOME"); xdgDataHome != "" {
 			dirs = append(dirs, filepath.Join(xdgDataHome, "fonts"))
 		}
+		if xdgDataDirs := os.Getenv("XDG_DATA_DIRS"); xdgDataDirs != "" {
+			dirs = append(dirs, filepath.Join(xdgDataDirs, "fonts"))
+		}
 	case "android":
 		dirs = []string{
 			"/system/fonts",
@@ -70,7 +73,7 @@ func DefaultFontDirs() []string {
 			sysRoot = "C:"
 		}
 		dirs = []string{
-			filepath.Join(filepath.VolumeName(sysRoot), `\Windows`, "Fonts"),
+			filepath.Join(filepath.VolumeName(sysRoot), `Windows`, "Fonts"),
 		}
 	}
 	return dirs
