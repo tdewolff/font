@@ -1,6 +1,6 @@
 module github.com/tdewolff/font
 
-go 1.22.0
+go 1.20.0
 
 require (
 	github.com/andybalholm/brotli v1.1.0
