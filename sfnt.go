@@ -285,8 +285,8 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 			//	return nil, fmt.Errorf("bad checksum")
 			//}
 			//binary.BigEndian.PutUint32(b[offset+8:], checksumAdjustment)
-		} else if calcChecksum(b[offset:offset+length+padding]) != checksum {
-			return nil, fmt.Errorf("%s: bad checksum", tag)
+			//} else if calcChecksum(b[offset:offset+length+padding]) != checksum {
+			//	return nil, fmt.Errorf("%s: bad checksum", tag)
 		}
 		tables[tag] = b[offset : offset+length : offset+length]
 	}
