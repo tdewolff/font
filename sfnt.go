@@ -261,7 +261,7 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 	tables := make(map[string][]byte, numTables)
 	for i := 0; i < int(numTables); i++ {
 		tag := r.ReadString(4)
-		checksum := r.ReadUint32()
+		_ = r.ReadUint32() // checksum
 		offset := r.ReadUint32()
 		length := r.ReadUint32()
 
