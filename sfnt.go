@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -205,6 +206,50 @@ func ParseSFNT(b []byte, index int) (*SFNT, error) {
 // ParseEmbeddedSFNT is like ParseSFNT but for embedded font files in PDFs. It allows font files with fewer required tables.
 func ParseEmbeddedSFNT(b []byte, index int) (*SFNT, error) {
 	return parseSFNT(b, index, true)
+}
+
+// ParseCFF parses a bare CFF font file, such as those embedded in PDFs.
+// TODO: work in progress
+func ParseCFF(b []byte) (*SFNT, error) {
+	w, _ := os.Create("out.cff")
+	w.Write(b)
+	w.Close()
+
+	sfnt := &SFNT{}
+	sfnt.Version = "OTTO"
+	sfnt.IsCFF = true
+	sfnt.Tables = map[string][]byte{
+		"CFF ": b,
+	}
+	if err := sfnt.parseCFF(); err != nil {
+		return nil, err
+	} else if 256 <= sfnt.CFF.charStrings.Len() {
+		return nil, fmt.Errorf("unsupported CFF with more than 255 glyphs")
+	}
+	sfnt.Maxp = &maxpTable{
+		NumGlyphs: uint16(sfnt.CFF.charStrings.Len()),
+	}
+
+	encoding := windows1252
+
+	cmapFormat := &cmapFormat12{}
+	cmapFormat.StartCharCode = []uint32{uint32(encoding[0])}
+	cmapFormat.StartGlyphID = []uint32{0}
+	for id, r := range encoding {
+		d := uint32(r) - cmapFormat.StartCharCode[len(cmapFormat.StartCharCode)-1]
+		if uint32(id) != cmapFormat.StartGlyphID[len(cmapFormat.StartGlyphID)-1]+d {
+			cmapFormat.StartCharCode = append(cmapFormat.StartCharCode, uint32(r))
+			cmapFormat.EndCharCode = append(cmapFormat.EndCharCode, uint32(encoding[id-1]))
+			cmapFormat.StartGlyphID = append(cmapFormat.StartGlyphID, uint32(id))
+		}
+	}
+	cmapFormat.EndCharCode = append(cmapFormat.EndCharCode, uint32(encoding[len(encoding)-1]))
+	sfnt.Cmap = &cmapTable{
+		Subtables: []cmapSubtable{cmapFormat},
+	}
+
+	fmt.Println(sfnt.CFF.charStrings.Len())
+	return sfnt, nil
 }
 
 func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {

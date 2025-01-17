@@ -17,9 +17,10 @@ import (
 var ErrBadNumOperands = fmt.Errorf("bad number of operands for operator")
 
 type cffTable struct {
-	version     int
-	name        string
-	top         *cffTopDICT
+	version int
+	name    string
+	top     *cffTopDICT
+	//encoding    []uint8
 	globalSubrs *cffINDEX
 	charset     []string
 	charStrings *cffINDEX
@@ -57,8 +58,10 @@ func (sfnt *SFNT) parseCFF() error {
 	topINDEX, err := parseINDEX(r, false)
 	if err != nil {
 		return fmt.Errorf("CFF: Top INDEX: %w", err)
-	} else if len(topINDEX.offset) != len(nameINDEX.offset) {
-		return fmt.Errorf("CFF: Top INDEX: bad count")
+	} else if topINDEX.Len() != nameINDEX.Len() {
+		return fmt.Errorf("CFF: invalid lengths for Top INDEX or Name INDEX")
+	} else if topINDEX.Len() != 1 {
+		return fmt.Errorf("CFF: Top INDEX: only one font per file is supported")
 	}
 
 	stringINDEX, err := parseINDEX(r, false)
@@ -72,6 +75,21 @@ func (sfnt *SFNT) parseCFF() error {
 	} else if topDICT.CharstringType != 2 {
 		return fmt.Errorf("CFF: Type %d Charstring format not supported", topDICT.CharstringType)
 	}
+
+	//var encoding []uint8
+	//r.Seek(uint32(topDICT.Encoding))
+	//if format := r.ReadUint8(); format == 0 {
+	//	numCodes := int(r.ReadUint8())
+	//	encoding = make([]uint8, numCodes)
+	//	for i := 0; i < numCodes; i++ {
+	//		encoding[i] = r.ReadUint8()
+	//	}
+	//	fmt.Println(encoding)
+	//} else if format == 1 {
+	//	return fmt.Errorf("CFF: Encoding: unsupported format %v", format)
+	//} else {
+	//	return fmt.Errorf("CFF: Encoding: invalid format")
+	//}
 
 	globalSubrsINDEX, err := parseINDEX(r, false)
 	if err != nil {
@@ -138,9 +156,10 @@ func (sfnt *SFNT) parseCFF() error {
 	}
 
 	sfnt.CFF = &cffTable{
-		version:     1,
-		name:        string(nameINDEX.Get(0)),
-		top:         topDICT,
+		version: 1,
+		name:    string(nameINDEX.Get(0)),
+		top:     topDICT,
+		//encoding:    encoding,
 		globalSubrs: globalSubrsINDEX,
 		charset:     charset,
 		charStrings: charStringsINDEX,
