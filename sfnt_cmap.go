@@ -155,6 +155,29 @@ func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
 	return r, ok
 }
 
+type cmapFormat14 struct {
+	glyphIDMap map[rune]uint16
+
+	unicodeMap map[uint16]rune
+	once       sync.Once
+}
+
+func (subtable *cmapFormat14) Get(r rune) (uint16, bool) {
+	glyphID, ok := subtable.glyphIDMap[r]
+	return glyphID, ok
+}
+
+func (subtable *cmapFormat14) ToUnicode(glyphID uint16) (rune, bool) {
+	subtable.once.Do(func() {
+		subtable.unicodeMap = make(map[uint16]rune, len(subtable.glyphIDMap))
+		for r, glyphID := range subtable.glyphIDMap {
+			subtable.unicodeMap[glyphID] = r
+		}
+	})
+	r, ok := subtable.unicodeMap[glyphID]
+	return r, ok
+}
+
 func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16) {
 	data := cmapFormat4{}
 	addSegment := func(firstCode, lastCode rune, glyphIDs []uint16, contiguous bool) {
@@ -434,7 +457,7 @@ func (sfnt *SFNT) parseCmap() error {
 				return fmt.Errorf("cmap: bad subtable %d", j)
 			}
 		}
-		rs = parse.NewBinaryReader(b[offset+rs.Pos() : offset+length : offset+length])
+		rs.SetLen(length - rs.Pos())
 
 		if subtableID == -1 {
 			subtableID = len(sfnt.Cmap.Subtables)
@@ -584,8 +607,38 @@ func (sfnt *SFNT) parseCmap() error {
 					subtable.StartGlyphID[i] = startGlyphID
 				}
 				sfnt.Cmap.Subtables = append(sfnt.Cmap.Subtables, subtable)
+			case 14:
+				if platformID != 0 || encodingID != 5 {
+					return fmt.Errorf("cmap: bad subtable %d", j)
+				}
+				// TODO: implement cmap subtable format 14
+				//numVarSelectorRecords := rs.ReadUint32()
+				//for i := 0; i < int(numVarSelectorRecords); i++ {
+				//	varSelector := rs.ReadUint24()
+				//	_ = rs.ReadUint32() // defaultUVSOffset
+				//	nonDefaultUVSOffset := rs.ReadUint32()
+				//	if nonDefaultUVSOffset != 0 {
+				//		if length < nonDefaultUVSOffset+4 {
+				//			return fmt.Errorf("cmap: bad subtable %d", j)
+				//		}
+				//		pos := rs.Pos()
+				//		rs.Seek(nonDefaultUVSOffset)
+				//		numUVSMappings := rs.ReadUint32()
+				//		if length < nonDefaultUVSOffset+4+numUVSMappings*4 {
+				//			return fmt.Errorf("cmap: bad subtable %d", j)
+				//		}
+				//		for j := 0; j < int(numUVSMappings); j++ {
+				//			unicodeValue := rs.ReadUint24()
+				//			glyphID := rs.ReadUint16()
+				//			_ = varSelector
+				//			_ = unicodeValue
+				//			_ = glyphID
+				//		}
+				//		rs.Seek(pos)
+				//	}
+				//}
 			default:
-				return fmt.Errorf("cmap: unknown subtable format %d", format)
+				return fmt.Errorf("cmap: unsupported subtable format %d", format)
 			}
 		}
 		sfnt.Cmap.EncodingRecords = append(sfnt.Cmap.EncodingRecords, cmapEncodingRecord{
