@@ -173,21 +173,19 @@ func (sfnt *SFNT) GlyphVerticalAdvance(glyphID uint16) uint16 {
 }
 
 // GlyphBounds returns the bounding rectangle (xmin,ymin,xmax,ymax) of the glyph.
-func (sfnt *SFNT) GlyphBounds(glyphID uint16) (int16, int16, int16, int16, error) {
+func (sfnt *SFNT) GlyphBounds(glyphID uint16) (int16, int16, int16, int16) {
 	if sfnt.IsTrueType {
 		contour, err := sfnt.Glyf.Contour(glyphID)
-		if err != nil {
-			return 0, 0, 0, 0, err
+		if err == nil {
+			return contour.XMin, contour.YMin, contour.XMax, contour.YMax
 		}
-		return contour.XMin, contour.YMin, contour.XMax, contour.YMax, nil
 	} else if sfnt.IsCFF {
 		p := &bboxPather{}
-		if err := sfnt.CFF.ToPath(p, glyphID, 0, 0, 0, 1.0, NoHinting); err != nil {
-			return 0, 0, 0, 0, err
+		if err := sfnt.CFF.ToPath(p, glyphID, 0, 0, 0, 1.0, NoHinting); err == nil {
+			return int16(p.XMin), int16(p.YMin), int16(math.Ceil(p.XMax)), int16(math.Ceil(p.YMax))
 		}
-		return int16(p.XMin), int16(p.YMin), int16(math.Ceil(p.XMax)), int16(math.Ceil(p.YMax)), nil
 	}
-	return 0, 0, 0, 0, fmt.Errorf("only TrueType is supported")
+	return 0, 0, 0, 0
 }
 
 // Kerning returns the kerning between two glyphs, i.e. the advance correction for glyph pairs.
