@@ -105,7 +105,7 @@ func (cmd *Show) Run() error {
 	draw.Draw(img, rect, image.NewUniform(canvas.White), image.ZP, draw.Over)
 
 	ras := vector.NewRasterizer(width, height)
-	p.ToRasterizer(ras, canvas.DPMM(f))
+	p.ToVectorRasterizer(ras, canvas.DPMM(f))
 	ras.Draw(img, glyphRect, image.NewUniform(canvas.Black), image.ZP)
 
 	if cmd.Ratio == 0.0 {

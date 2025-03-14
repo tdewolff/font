@@ -225,7 +225,7 @@ func (cmd *Subset) Run() error {
 		for i, glyphID := range glyphIDs {
 			name, ok := fmtName(cmd.GlyphName, sfnt, glyphID)
 			if !ok {
-				Warning.Println("missing glyph name or unicode mapping for glyph: %s(%d)", sfnt.GlyphName(glyphID), glyphID)
+				Warning.Printf("missing glyph name or unicode mapping for glyph: %s(%d)", sfnt.GlyphName(glyphID), glyphID)
 			} else {
 				names[i] = name
 			}
