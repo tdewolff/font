@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tdewolff/parse/v2"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
+
+	"github.com/tdewolff/parse/v2"
 )
 
 // MaxCmapSegments is the maximum number of cmap segments that will be accepted.

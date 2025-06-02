@@ -1028,6 +1028,10 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 
 	// set new Subrs INDEX, charStrings already modified
 	cff.globalSubrs = globalSubrs
+
+	// copy pointers in fonts
+	fonts := *cff.fonts
+	cff.fonts = &fonts
 	cff.fonts.localSubrs = []*cffINDEX{localSubrs}
 	return nil
 }

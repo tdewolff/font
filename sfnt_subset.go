@@ -134,7 +134,8 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 	// copy and rewrite tables
 	for _, tag := range tags {
 		if tag == "maxp" {
-			sfnt.Maxp = &(*sfntOld.Maxp)
+			maxp := *sfntOld.Maxp
+			sfnt.Maxp = &maxp
 			sfnt.Maxp.NumGlyphs = uint16(len(glyphIDs))
 			break
 		}
@@ -340,7 +341,8 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			w.WriteBytes(table[52:])
 			sfnt.Tables[tag] = w.Bytes()
 
-			sfnt.Head = &(*sfntOld.Head)
+			head := *sfntOld.Head
+			sfnt.Head = &head
 			sfnt.Head.IndexToLocFormat = indexToLocFormat
 		case "hhea":
 			w := parse.NewBinaryWriter(make([]byte, 0, len(sfntOld.Tables["hhea"])))
@@ -349,7 +351,8 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			w.WriteBytes(table[36:])
 			sfnt.Tables[tag] = w.Bytes()
 
-			sfnt.Hhea = &(*sfntOld.Hhea)
+			hhea := *sfntOld.Hhea
+			sfnt.Hhea = &hhea
 			sfnt.Hhea.NumberOfHMetrics = numberOfHMetrics
 		case "hmtx":
 			sfnt.Hmtx = &hmtxTable{}
