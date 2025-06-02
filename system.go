@@ -65,7 +65,7 @@ func DefaultFontDirs() []string {
 			dirs = append(dirs, filepath.Join(home, "lib", "font"))
 		}
 	case "windows":
-		sysRoot := os.Getenv("SYSTEMROOT")
+		sysRoot := filepath.VolumeName(os.Getenv("SYSTEMROOT"))
 		if sysRoot == "" {
 			sysRoot = os.Getenv("SYSTEMDRIVE")
 		}
