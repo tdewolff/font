@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/andybalholm/brotli"
+
 	"github.com/tdewolff/parse/v2"
 )
 
@@ -781,7 +782,7 @@ func read255Uint16(r *parse.BinaryReader) uint16 {
 
 func (sfnt *SFNT) WriteWOFF2() ([]byte, error) {
 	tags := make([]string, 0, len(sfnt.Tables))
-	for tag, _ := range sfnt.Tables {
+	for tag := range sfnt.Tables {
 		if tag == "DSIG" {
 			continue // exclude DSIG table
 		}
@@ -1039,6 +1040,8 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 			yMin = r.ReadInt16()
 			xMax = r.ReadInt16()
 			yMax = r.ReadInt16()
+
+			nContourStream.WriteInt16(-1)
 
 			hasInstructions := false
 			for {
