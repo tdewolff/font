@@ -57,7 +57,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 		return nil, ErrInvalidFontData
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	signature := r.ReadString(4)
 	if signature != "wOF2" {
 		return nil, fmt.Errorf("bad signature")
@@ -78,7 +78,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	_ = r.ReadUint32()                    // metaOrigLength
 	_ = r.ReadUint32()                    // privOffset
 	_ = r.ReadUint32()                    // privLength
-	if r.EOF() {
+	if r.Err() == io.EOF {
 		return nil, ErrInvalidFontData
 	} else if length != uint32(len(b)) {
 		return nil, fmt.Errorf("length in header must match file size")
@@ -93,7 +93,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	tables := []woff2Table{}
 	var uncompressedSize uint32
 	for i := 0; i < int(numTables); i++ {
-		flags := r.ReadByte()
+		flags := r.ReadUint8()
 		tagIndex := int(flags & 0x3F)
 		transformVersion := int((flags & 0xC0) >> 6)
 
@@ -163,8 +163,8 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	// TODO: (WOFF2) parse collection directory format
 
 	// decompress font data using Brotli
-	compData := r.ReadBytes(totalCompressedSize)
-	if r.EOF() {
+	compData := r.ReadBytes(int64(totalCompressedSize))
+	if r.Err() == io.EOF {
 		return nil, ErrInvalidFontData
 	} else if MaxMemory < uncompressedSize {
 		return nil, ErrExceedsMemory
@@ -209,11 +209,11 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 				return nil, fmt.Errorf("loca: invalid value for origLength")
 			}
 		} else {
-			rGlyf := parse.NewBinaryReader(tables[iGlyf].data)
+			rGlyf := parse.NewBinaryReaderBytes(tables[iGlyf].data)
 			_ = rGlyf.ReadUint32() // version
 			numGlyphs := uint32(rGlyf.ReadUint16())
 			indexFormat := rGlyf.ReadUint16()
-			if rGlyf.EOF() {
+			if rGlyf.Err() == io.EOF {
 				return nil, ErrInvalidFontData
 			}
 			if indexFormat == 0 && tables[iLoca].origLength != (numGlyphs+1)*2 || indexFormat == 1 && tables[iLoca].origLength != (numGlyphs+1)*4 {
@@ -316,7 +316,7 @@ func ParseWOFF2(b []byte) ([]byte, error) {
 	var iCheckSumAdjustment uint32
 	for _, tag := range tags {
 		if tag == "head" {
-			iCheckSumAdjustment = w.Len() + 8
+			iCheckSumAdjustment = uint32(w.Len()) + 8
 		}
 		table := tables[tagTableIndex[tag]]
 		w.WriteBytes(table.data)
@@ -338,7 +338,7 @@ func signInt16(flag byte, pos uint) int16 {
 // Remarkable! This code was written on a Sunday evening, and after fixing the compiler errors it worked flawlessly!
 // Edit: oops, there was actually a subtle bug fixed in dx of flag < 120 of simple glyphs.
 func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error) {
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	_ = r.ReadUint16() // version
 	optionFlags := r.ReadUint16()
 	numGlyphs := r.ReadUint16()
@@ -350,24 +350,24 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 	compositeStreamSize := r.ReadUint32()
 	bboxStreamSize := r.ReadUint32()
 	instructionStreamSize := r.ReadUint32()
-	if r.EOF() || nContourStreamSize != 2*uint32(numGlyphs) {
+	if r.Err() == io.EOF || nContourStreamSize != 2*uint32(numGlyphs) {
 		return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 	}
 
 	bitmapSize := ((uint32(numGlyphs) + 31) >> 5) << 2
-	nContourStream := parse.NewBinaryReader(r.ReadBytes(nContourStreamSize))
-	nPointsStream := parse.NewBinaryReader(r.ReadBytes(nPointsStreamSize))
-	flagStream := parse.NewBinaryReader(r.ReadBytes(flagStreamSize))
-	glyphStream := parse.NewBinaryReader(r.ReadBytes(glyphStreamSize))
-	compositeStream := parse.NewBinaryReader(r.ReadBytes(compositeStreamSize))
-	bboxBitmap := parse.NewBitmapReader(r.ReadBytes(bitmapSize))
-	bboxStream := parse.NewBinaryReader(r.ReadBytes(bboxStreamSize - bitmapSize))
-	instructionStream := parse.NewBinaryReader(r.ReadBytes(instructionStreamSize))
+	nContourStream := parse.NewBinaryReaderBytes(r.ReadBytes(int64(nContourStreamSize)))
+	nPointsStream := parse.NewBinaryReaderBytes(r.ReadBytes(int64(nPointsStreamSize)))
+	flagStream := parse.NewBinaryReaderBytes(r.ReadBytes(int64(flagStreamSize)))
+	glyphStream := parse.NewBinaryReaderBytes(r.ReadBytes(int64(glyphStreamSize)))
+	compositeStream := parse.NewBinaryReaderBytes(r.ReadBytes(int64(compositeStreamSize)))
+	bboxBitmap := parse.NewBitmapReader(r.ReadBytes(int64(bitmapSize)))
+	bboxStream := parse.NewBinaryReaderBytes(r.ReadBytes(int64(bboxStreamSize - bitmapSize)))
+	instructionStream := parse.NewBinaryReaderBytes(r.ReadBytes(int64(instructionStreamSize)))
 	var overlapSimpleBitmap *parse.BitmapReader
 	if optionFlags&0x0001 != 0 { // overlapSimpleBitmap present
-		overlapSimpleBitmap = parse.NewBitmapReader(r.ReadBytes(bitmapSize))
+		overlapSimpleBitmap = parse.NewBitmapReader(r.ReadBytes(int64(bitmapSize)))
 	}
-	if r.EOF() {
+	if r.Err() == io.EOF {
 		return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 	}
 
@@ -385,7 +385,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 		if indexFormat == 0 {
 			loca.WriteUint16(uint16(w.Len() >> 1))
 		} else {
-			loca.WriteUint32(w.Len())
+			loca.WriteUint32(uint32(w.Len()))
 		}
 
 		explicitBbox := bboxBitmap.Read()       // EOF cannot occur
@@ -402,7 +402,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				yMin = bboxStream.ReadInt16()
 				xMax = bboxStream.ReadInt16()
 				yMax = bboxStream.ReadInt16()
-				if bboxStream.EOF() {
+				if bboxStream.Err() == io.EOF {
 					return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 				}
 			}
@@ -417,7 +417,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				nPoints += nPoint
 				endPtsOfContours[iContour] = nPoints - 1
 			}
-			if nPointsStream.EOF() {
+			if nPointsStream.Err() == io.EOF {
 				return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 			}
 
@@ -426,7 +426,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 			xCoordinates := make([]int16, 0, nPoints)
 			yCoordinates := make([]int16, 0, nPoints)
 			for iPoint := uint16(0); iPoint < nPoints; iPoint++ {
-				flag := flagStream.ReadByte()
+				flag := flagStream.ReadUint8()
 				onCurve := (flag & 0x80) == 0
 				flag &= 0x7f
 
@@ -434,31 +434,31 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				// as well as: https://github.com/google/woff2/blob/master/src/woff2_dec.cc
 				var dx, dy int16
 				if flag < 10 {
-					coord0 := int16(glyphStream.ReadByte())
+					coord0 := int16(glyphStream.ReadUint8())
 					dy = signInt16(flag, 0) * (int16(flag&0x0E)<<7 + coord0)
 				} else if flag < 20 {
-					coord0 := int16(glyphStream.ReadByte())
+					coord0 := int16(glyphStream.ReadUint8())
 					dx = signInt16(flag, 0) * (int16((flag-10)&0x0E)<<7 + coord0)
 				} else if flag < 84 {
-					coord0 := int16(glyphStream.ReadByte())
+					coord0 := int16(glyphStream.ReadUint8())
 					dx = signInt16(flag, 0) * (1 + int16((flag-20)&0x30) + coord0>>4)
 					dy = signInt16(flag, 1) * (1 + int16((flag-20)&0x0C)<<2 + (coord0 & 0x0F))
 				} else if flag < 120 {
-					coord0 := int16(glyphStream.ReadByte())
-					coord1 := int16(glyphStream.ReadByte())
+					coord0 := int16(glyphStream.ReadUint8())
+					coord1 := int16(glyphStream.ReadUint8())
 					dx = signInt16(flag, 0) * (1 + int16((flag-84)/12)<<8 + coord0)
 					dy = signInt16(flag, 1) * (1 + (int16((flag-84)%12)>>2)<<8 + coord1)
 				} else if flag < 124 {
-					coord0 := int16(glyphStream.ReadByte())
-					coord1 := int16(glyphStream.ReadByte())
-					coord2 := int16(glyphStream.ReadByte())
+					coord0 := int16(glyphStream.ReadUint8())
+					coord1 := int16(glyphStream.ReadUint8())
+					coord2 := int16(glyphStream.ReadUint8())
 					dx = signInt16(flag, 0) * (coord0<<4 + coord1>>4)
 					dy = signInt16(flag, 1) * ((coord1&0x0F)<<8 + coord2)
 				} else {
-					coord0 := int16(glyphStream.ReadByte())
-					coord1 := int16(glyphStream.ReadByte())
-					coord2 := int16(glyphStream.ReadByte())
-					coord3 := int16(glyphStream.ReadByte())
+					coord0 := int16(glyphStream.ReadUint8())
+					coord1 := int16(glyphStream.ReadUint8())
+					coord2 := int16(glyphStream.ReadUint8())
+					coord3 := int16(glyphStream.ReadUint8())
 					dx = signInt16(flag, 0) * (coord0<<8 + coord1)
 					dy = signInt16(flag, 1) * (coord2<<8 + coord3)
 				}
@@ -502,13 +502,13 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 					}
 				}
 			}
-			if flagStream.EOF() || glyphStream.EOF() {
+			if flagStream.Err() == io.EOF || glyphStream.Err() == io.EOF {
 				return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 			}
 
 			instructionLength := read255Uint16(glyphStream)
-			instructions := instructionStream.ReadBytes(uint32(instructionLength))
-			if instructionStream.EOF() {
+			instructions := instructionStream.ReadBytes(int64(instructionLength))
+			if instructionStream.Err() == io.EOF {
 				return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 			}
 
@@ -543,7 +543,7 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 			yMin := bboxStream.ReadInt16()
 			xMax := bboxStream.ReadInt16()
 			yMax := bboxStream.ReadInt16()
-			if bboxStream.EOF() {
+			if bboxStream.Err() == io.EOF {
 				return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 			}
 
@@ -575,8 +575,8 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 				} else if have2by2 {
 					numBytes += 8
 				}
-				compositeBytes := compositeStream.ReadBytes(uint32(numBytes))
-				if compositeStream.EOF() {
+				compositeBytes := compositeStream.ReadBytes(int64(numBytes))
+				if compositeStream.Err() == io.EOF {
 					return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 				}
 
@@ -593,8 +593,8 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 
 			if hasInstructions {
 				instructionLength := read255Uint16(glyphStream)
-				instructions := instructionStream.ReadBytes(uint32(instructionLength))
-				if instructionStream.EOF() {
+				instructions := instructionStream.ReadBytes(int64(instructionLength))
+				if instructionStream.Err() == io.EOF {
 					return nil, nil, fmt.Errorf("glyf: %w", ErrInvalidFontData)
 				}
 				w.WriteUint16(instructionLength)
@@ -612,33 +612,33 @@ func reconstructGlyfLoca(b []byte, origLocaLength uint32) ([]byte, []byte, error
 	if indexFormat == 0 {
 		loca.WriteUint16(uint16(w.Len() >> 1))
 	} else {
-		loca.WriteUint32(w.Len())
+		loca.WriteUint32(uint32(w.Len()))
 	}
 	return w.Bytes(), loca.Bytes(), nil
 }
 
 func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	// get indexFormat
-	rHead := parse.NewBinaryReader(head)
+	rHead := parse.NewBinaryReaderBytes(head)
 	_ = rHead.ReadBytes(50) // skip
 	indexFormat := rHead.ReadInt16()
-	if rHead.EOF() {
+	if rHead.Err() == io.EOF {
 		return nil, ErrInvalidFontData
 	}
 
 	// get numGlyphs
-	rMaxp := parse.NewBinaryReader(maxp)
+	rMaxp := parse.NewBinaryReaderBytes(maxp)
 	_ = rMaxp.ReadUint32() // version
 	numGlyphs := rMaxp.ReadUint16()
-	if rMaxp.EOF() {
+	if rMaxp.Err() == io.EOF {
 		return nil, ErrInvalidFontData
 	}
 
 	// get numHMetrics
-	rHhea := parse.NewBinaryReader(hhea)
+	rHhea := parse.NewBinaryReaderBytes(hhea)
 	_ = rHhea.ReadBytes(34) // skip all but the last header field
 	numHMetrics := rHhea.ReadUint16()
-	if rHhea.EOF() {
+	if rHhea.Err() == io.EOF {
 		return nil, ErrInvalidFontData
 	} else if numHMetrics < 1 {
 		return nil, fmt.Errorf("hmtx: must have at least one entry")
@@ -654,10 +654,10 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	if locaLength != uint32(len(loca)) {
 		return nil, ErrInvalidFontData
 	}
-	rLoca := parse.NewBinaryReader(loca)
+	rLoca := parse.NewBinaryReaderBytes(loca)
 
-	r := parse.NewBinaryReader(b)
-	flags := r.ReadByte() // flags
+	r := parse.NewBinaryReaderBytes(b)
+	flags := r.ReadUint8() // flags
 	reconstructProportional := flags&0x01 != 0
 	reconstructMonospaced := flags&0x02 != 0
 	if flags&0xFC != 0 {
@@ -693,15 +693,15 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 	}
 
 	// extract xMin values from glyf table using loca indices
-	rGlyf := parse.NewBinaryReader(glyf)
+	rGlyf := parse.NewBinaryReaderBytes(glyf)
 	iGlyphMin := uint16(0)
 	iGlyphMax := numGlyphs
 	if !reconstructProportional {
 		iGlyphMin = numHMetrics
 		if indexFormat != 0 {
-			_ = rLoca.ReadBytes(4 * uint32(iGlyphMin))
+			_ = rLoca.ReadBytes(4 * int64(iGlyphMin))
 		} else {
-			_ = rLoca.ReadBytes(2 * uint32(iGlyphMin))
+			_ = rLoca.ReadBytes(2 * int64(iGlyphMin))
 		}
 	} else if !reconstructMonospaced {
 		iGlyphMax = numHMetrics
@@ -722,10 +722,10 @@ func reconstructHmtx(b, head, glyf, loca, maxp, hhea []byte) ([]byte, error) {
 		if offsetNext == offset {
 			lsbs[iGlyph] = 0
 		} else {
-			rGlyf.Seek(offset)
+			rGlyf.Seek(int64(offset), 0)
 			_ = rGlyf.ReadInt16() // numContours
 			xMin := rGlyf.ReadInt16()
-			if rGlyf.EOF() {
+			if rGlyf.Err() == io.EOF {
 				return nil, ErrInvalidFontData
 			}
 			lsbs[iGlyph] = xMin
@@ -748,8 +748,8 @@ func readUintBase128(r *parse.BinaryReader) (uint32, error) {
 	// see https://www.w3.org/TR/WOFF2/#DataTypes
 	var accum uint32
 	for i := 0; i < 5; i++ {
-		dataByte := r.ReadByte()
-		if r.EOF() {
+		dataByte := r.ReadUint8()
+		if r.Err() == io.EOF {
 			return 0, ErrInvalidFontData
 		}
 		if i == 0 && dataByte == 0x80 {
@@ -768,13 +768,13 @@ func readUintBase128(r *parse.BinaryReader) (uint32, error) {
 
 func read255Uint16(r *parse.BinaryReader) uint16 {
 	// see https://www.w3.org/TR/WOFF2/#DataTypes
-	code := r.ReadByte()
+	code := r.ReadUint8()
 	if code == 253 {
 		return r.ReadUint16()
 	} else if code == 255 {
-		return uint16(r.ReadByte()) + 253
+		return uint16(r.ReadUint8()) + 253
 	} else if code == 254 {
-		return uint16(r.ReadByte()) + 253*2
+		return uint16(r.ReadUint8()) + 253*2
 	} else {
 		return uint16(code)
 	}
@@ -1034,7 +1034,7 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 			instructionStream.WriteBytes(contour.Instructions)
 		} else {
 			// composite glyph
-			r := parse.NewBinaryReader(glyf.Get(uint16(glyphID)))
+			r := parse.NewBinaryReaderBytes(glyf.Get(uint16(glyphID)))
 			_ = r.ReadInt16() // numberOfContours
 			xMin = r.ReadInt16()
 			yMin = r.ReadInt16()
@@ -1052,7 +1052,7 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 				}
 
 				compositeStream.WriteUint16(flags)
-				compositeStream.WriteBytes(r.ReadBytes(length - 2))
+				compositeStream.WriteBytes(r.ReadBytes(int64(length) - 2))
 				if !more {
 					break
 				}
@@ -1060,7 +1060,7 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 			if hasInstructions {
 				instructionLength := r.ReadUint16()
 				write255Uint16(glyphStream, instructionLength)
-				glyphStream.WriteBytes(r.ReadBytes(uint32(instructionLength)))
+				glyphStream.WriteBytes(r.ReadBytes(int64(instructionLength)))
 			}
 		}
 
@@ -1075,7 +1075,7 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 		overlapSimpleStream.Write(hasOverlap)
 	}
 
-	n := uint32(36)
+	n := int64(36)
 	n += nContourStream.Len() + nPointsStream.Len()
 	n += flagStream.Len() + glyphStream.Len() + compositeStream.Len()
 	n += bboxBitmapStream.Len() + bboxStream.Len() + instructionStream.Len()
@@ -1087,13 +1087,13 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 	w.WriteUint16(optionFlags)
 	w.WriteUint16(numGlyphs)
 	w.WriteUint16(uint16(loca.Format))
-	w.WriteUint32(nContourStream.Len())
-	w.WriteUint32(nPointsStream.Len())
-	w.WriteUint32(flagStream.Len())
-	w.WriteUint32(glyphStream.Len())
-	w.WriteUint32(compositeStream.Len())
-	w.WriteUint32(bboxBitmapStream.Len() + bboxStream.Len())
-	w.WriteUint32(instructionStream.Len())
+	w.WriteUint32(uint32(nContourStream.Len()))
+	w.WriteUint32(uint32(nPointsStream.Len()))
+	w.WriteUint32(uint32(flagStream.Len()))
+	w.WriteUint32(uint32(glyphStream.Len()))
+	w.WriteUint32(uint32(compositeStream.Len()))
+	w.WriteUint32(uint32(bboxBitmapStream.Len() + bboxStream.Len()))
+	w.WriteUint32(uint32(instructionStream.Len()))
 	w.WriteBytes(nContourStream.Bytes())
 	w.WriteBytes(nPointsStream.Bytes())
 	w.WriteBytes(flagStream.Bytes())

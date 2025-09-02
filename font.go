@@ -11,8 +11,9 @@ import (
 	"sort"
 
 	"github.com/golang/freetype/truetype"
-	"github.com/tdewolff/parse/v2"
 	"golang.org/x/image/font/sfnt"
+
+	"github.com/tdewolff/parse/v2"
 )
 
 // MediaType returns the media type (MIME) for a given font.
@@ -163,7 +164,7 @@ func FromGoFreetype(font *truetype.Font) []byte {
 
 	// write table directory
 	var checksumAdjustmentPos uint32
-	offset := w.Len() + 16*uint32(numTables)
+	offset := uint32(w.Len()) + 16*uint32(numTables)
 	for _, tag := range tags {
 		length := uint32(len(tables[tag]))
 		padding := (4 - length&3) & 3

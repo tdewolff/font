@@ -33,7 +33,7 @@ func (sfnt *SFNT) parseCFF() error {
 		return fmt.Errorf("CFF: missing table")
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	major := r.ReadUint8()
 	minor := r.ReadUint8()
 	if major != 1 || minor != 0 {
@@ -96,7 +96,7 @@ func (sfnt *SFNT) parseCFF() error {
 		return fmt.Errorf("CFF: Global Subrs INDEX: %w", err)
 	}
 
-	r.Seek(uint32(topDICT.CharStrings))
+	r.Seek(int64(topDICT.CharStrings), 0)
 	charStringsINDEX, err := parseINDEX(r, false)
 	if err != nil {
 		return fmt.Errorf("CFF: CharStrings INDEX: %w", err)
@@ -111,7 +111,7 @@ func (sfnt *SFNT) parseCFF() error {
 		charset = make([]string, charStringsINDEX.Len())
 		copy(charset, cffStandardStrings)
 	} else if 1 < charStringsINDEX.Len() {
-		r.Seek(uint32(topDICT.Charset))
+		r.Seek(int64(topDICT.Charset), 0)
 		if r.Len() == 0 {
 			return fmt.Errorf("CFF: bad Charset")
 		}
@@ -123,7 +123,7 @@ func (sfnt *SFNT) parseCFF() error {
 		format := r.ReadUint8()
 		switch format {
 		case 0:
-			if r.Len() < uint32(2*(numGlyphs-1)) {
+			if r.Len() < 2*int64(numGlyphs-1) {
 				return fmt.Errorf("CFF: bad Charset format 0")
 			}
 			for i := 1; i < numGlyphs; i++ {
@@ -179,7 +179,7 @@ func (sfnt *SFNT) parseCFF() error {
 			if len(b)-topDICT.PrivateOffset < privateDICT.Subrs {
 				return fmt.Errorf("CFF: bad Local Subrs INDEX offset")
 			}
-			r.Seek(uint32(topDICT.PrivateOffset + privateDICT.Subrs))
+			r.Seek(int64(topDICT.PrivateOffset+privateDICT.Subrs), 0)
 			localSubrsINDEX, err = parseINDEX(r, false)
 			if err != nil {
 				return fmt.Errorf("CFF: Local Subrs INDEX: %w", err)
@@ -210,7 +210,7 @@ func (sfnt *SFNT) parseCFF2() error {
 		return fmt.Errorf("CFF2: missing table")
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	major := r.ReadUint8()
 	minor := r.ReadUint8()
 	if major != 2 || minor != 0 {
@@ -222,7 +222,7 @@ func (sfnt *SFNT) parseCFF2() error {
 	}
 	topDictLength := r.ReadUint16()
 
-	topDICT, err := parseTopDICT2(r.ReadBytes(uint32(topDictLength)))
+	topDICT, err := parseTopDICT2(r.ReadBytes(int64(topDictLength)))
 	if err != nil {
 		return fmt.Errorf("CFF2: Top DICT: %w", err)
 	}
@@ -232,7 +232,7 @@ func (sfnt *SFNT) parseCFF2() error {
 		return fmt.Errorf("CFF2: Global Subrs INDEX: %w", err)
 	}
 
-	r.Seek(uint32(topDICT.CharStrings))
+	r.Seek(int64(topDICT.CharStrings), 0)
 	charStringsINDEX, err := parseINDEX(r, true)
 	if err != nil {
 		return fmt.Errorf("CFF2: CharStrings INDEX: %w", err)
@@ -409,7 +409,7 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader
 	}
 
 	callStack := []*parse.BinaryReader{}
-	r := parse.NewBinaryReader(charString)
+	r := parse.NewBinaryReaderBytes(charString)
 
 	hints := 0
 	stack := []int32{}
@@ -493,7 +493,7 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader
 					}
 					stack = stack[:0]
 				}
-				r.ReadBytes(uint32((hints + 7) / 8))
+				r.ReadBytes(int64((hints + 7) / 8))
 				stack = stack[:0]
 			case cffCallsubr, cffCallgsubr:
 				// callsubr and callgsubr
@@ -510,7 +510,7 @@ func (cff *cffTable) parseCharString(glyphID uint16, cb func(*parse.BinaryReader
 				stack = stack[:len(stack)-1]
 
 				callStack = append(callStack, r)
-				r = parse.NewBinaryReader(subr)
+				r = parse.NewBinaryReaderBytes(subr)
 			case cffReturn:
 				if cff.version == 2 {
 					return fmt.Errorf("%v: unsupported operator %d", table, b0)
@@ -918,7 +918,7 @@ func (cff *cffTable) updateSubrs(localSubrsMap, globalSubrsMap map[int32]int32, 
 
 				if skipDepth == 0 && mapped && oldIndex != newIndex {
 					lenNumber := uint32(cffNumberSize(int(oldIndex - oldBias)))
-					posNumber := r.Pos() - 1 - lenNumber // -1 as we're past the operator
+					posNumber := uint32(r.Pos()) - 1 - lenNumber // -1 as we're past the operator
 
 					index := indexStack[len(indexStack)-1]
 					offset := offsetStack[len(offsetStack)-1]
@@ -1229,7 +1229,7 @@ func parseINDEX(r *parse.BinaryReader, isCFF2 bool) (*cffINDEX, error) {
 	if offSize == 0 || 4 < offSize {
 		return nil, fmt.Errorf("bad offSize")
 	}
-	if r.Len() < uint32(offSize)*(uint32(count)+1) {
+	if r.Len() < int64(offSize)*(int64(count)+1) {
 		return nil, fmt.Errorf("bad data")
 	}
 
@@ -1251,10 +1251,10 @@ func parseINDEX(r *parse.BinaryReader, isCFF2 bool) (*cffINDEX, error) {
 			t.offset[i] = r.ReadUint32() - 1
 		}
 	}
-	if r.Len() < t.offset[count] {
+	if r.Len() < int64(t.offset[count]) {
 		return nil, fmt.Errorf("bad data")
 	}
-	t.data = r.ReadBytes(t.offset[count])
+	t.data = r.ReadBytes(int64(t.offset[count]))
 	return t, nil
 }
 
@@ -1732,7 +1732,7 @@ func parseDICT(b []byte, isCFF2 bool, callback func(b0 int, is []int, fs []float
 		256 + 13: -1,
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	ints := []int{}
 	reals := []float64{}
 	for 0 < r.Len() {
@@ -2018,8 +2018,8 @@ func parseFontINDEX(b []byte, fdArray, fdSelect, nGlyphs int, isCFF2 bool) (*cff
 		return nil, fmt.Errorf("bad Font INDEX offset")
 	}
 
-	r := parse.NewBinaryReader(b)
-	r.Seek(uint32(fdArray))
+	r := parse.NewBinaryReaderBytes(b)
+	r.Seek(int64(fdArray), 0)
 	fontINDEX, err := parseINDEX(r, false)
 	if err != nil {
 		return nil, fmt.Errorf("Font INDEX: %w", err)
@@ -2046,7 +2046,7 @@ func parseFontINDEX(b []byte, fdArray, fdSelect, nGlyphs int, isCFF2 bool) (*cff
 			if len(b)-fontDICT.PrivateOffset < privateDICT.Subrs {
 				return nil, fmt.Errorf("bad Local Subrs INDEX offset")
 			}
-			r.Seek(uint32(fontDICT.PrivateOffset + privateDICT.Subrs))
+			r.Seek(int64(fontDICT.PrivateOffset+privateDICT.Subrs), 0)
 			fonts.localSubrs[i], err = parseINDEX(r, isCFF2)
 			if err != nil {
 				return nil, fmt.Errorf("Local Subrs INDEX: %w", err)
@@ -2056,7 +2056,7 @@ func parseFontINDEX(b []byte, fdArray, fdSelect, nGlyphs int, isCFF2 bool) (*cff
 		}
 	}
 
-	r.Seek(uint32(fdSelect))
+	r.Seek(int64(fdSelect), 0)
 	format := r.ReadUint8()
 	if format == 0 {
 		fonts.fds = make([]uint8, nGlyphs)

@@ -314,8 +314,8 @@ func cmapWriteFormat12(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16
 	w.WriteUint32(uint32(startCharCode + n - 1)) // endCharCode
 	w.WriteUint32(uint32(startGlyphID))          // startGlyphID
 
-	binary.BigEndian.PutUint32(w.Bytes()[start+4:], w.Len()-start) // set length
-	binary.BigEndian.PutUint32(w.Bytes()[start+12:], numGroups)    // set numGroups
+	binary.BigEndian.PutUint32(w.Bytes()[start+4:], uint32(w.Len()-start)) // set length
+	binary.BigEndian.PutUint32(w.Bytes()[start+12:], numGroups)            // set numGroups
 }
 
 func cmapWrite(rs []rune, runeMap map[rune]uint16) []byte {
@@ -406,7 +406,7 @@ func (sfnt *SFNT) parseCmap() error {
 	}
 
 	sfnt.Cmap = &cmapTable{}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	if r.ReadUint16() != 0 {
 		return fmt.Errorf("cmap: bad version")
 	}
@@ -433,7 +433,7 @@ func (sfnt *SFNT) parseCmap() error {
 		}
 
 		// extract subtable length
-		rs := parse.NewBinaryReader(b[offset:])
+		rs := parse.NewBinaryReaderBytes(b[offset:])
 		format := rs.ReadUint16()
 		var length uint32
 		if format == 0 || format == 2 || format == 4 || format == 6 {
@@ -457,7 +457,7 @@ func (sfnt *SFNT) parseCmap() error {
 				return fmt.Errorf("cmap: bad subtable %d", j)
 			}
 		}
-		rs.SetLen(length - rs.Pos())
+		rs = parse.NewBinaryReaderBytes(b[offset+uint32(rs.Pos()) : offset+length])
 
 		if subtableID == -1 {
 			subtableID = len(sfnt.Cmap.Subtables)
@@ -498,7 +498,7 @@ func (sfnt *SFNT) parseCmap() error {
 				_ = rs.ReadUint16() // rangeShift
 
 				subtable := &cmapFormat4{}
-				if rs.Len() < 2+8*uint32(segCount) {
+				if rs.Len() < 2+8*int64(segCount) {
 					return fmt.Errorf("cmap: bad subtable %d", j)
 				}
 				subtable.EndCode = make([]uint16, segCount)
@@ -529,7 +529,7 @@ func (sfnt *SFNT) parseCmap() error {
 				_ = rs.ReadUint16() // last value may be invalid
 				subtable.IdDelta[segCount-1] = 1
 
-				glyphIdArrayLength := rs.Len() - 2*uint32(segCount)
+				glyphIdArrayLength := int(rs.Len() - 2*int64(segCount))
 				if glyphIdArrayLength%2 != 0 {
 					return fmt.Errorf("cmap: bad subtable %d", j)
 				}
@@ -542,7 +542,7 @@ func (sfnt *SFNT) parseCmap() error {
 						return fmt.Errorf("cmap: bad idRangeOffset in subtable %d", j)
 					} else if idRangeOffset != 0 {
 						index := int(idRangeOffset/2) + int(subtable.EndCode[i]-subtable.StartCode[i]) - (int(segCount) - i)
-						if index < 0 || glyphIdArrayLength <= uint32(index) {
+						if index < 0 || glyphIdArrayLength <= index {
 							return fmt.Errorf("cmap: bad idRangeOffset in subtable %d", j)
 						}
 					}
@@ -569,7 +569,7 @@ func (sfnt *SFNT) parseCmap() error {
 				subtable := &cmapFormat6{}
 				subtable.FirstCode = rs.ReadUint16()
 				entryCount := rs.ReadUint16()
-				if rs.Len() < 2*uint32(entryCount) {
+				if rs.Len() < 2*int64(entryCount) {
 					return fmt.Errorf("cmap: bad subtable %d", j)
 				}
 				subtable.GlyphIdArray = make([]uint16, entryCount)
@@ -585,7 +585,7 @@ func (sfnt *SFNT) parseCmap() error {
 				numGroups := rs.ReadUint32()
 				if MaxCmapSegments < numGroups {
 					return fmt.Errorf("cmap: too many segments in subtable %d", j)
-				} else if rs.Len() < 12*numGroups {
+				} else if rs.Len() < 12*int64(numGroups) {
 					return fmt.Errorf("cmap: bad subtable %d", j)
 				}
 

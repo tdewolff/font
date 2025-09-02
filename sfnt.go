@@ -256,7 +256,7 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 		return nil, ErrInvalidFontData
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	sfntVersion := r.ReadString(4)
 	isCollection := sfntVersion == "ttcf"
 	if isCollection {
@@ -270,11 +270,11 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 		if index < 0 || numFonts <= uint32(index) {
 			return nil, fmt.Errorf("bad font index %d", index)
 		}
-		if r.Len() < 4*numFonts {
+		if r.Len() < 4*int64(numFonts) {
 			return nil, ErrInvalidFontData
 		}
 
-		_ = r.ReadBytes(uint32(4 * index))
+		_ = r.ReadBytes(int64(4 * index))
 		offset := r.ReadUint32()
 		var length uint32
 		if uint32(index)+1 == numFonts {
@@ -286,7 +286,7 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 			return nil, ErrInvalidFontData
 		}
 
-		r.Seek(offset)
+		r.Seek(int64(offset), 0)
 		sfntVersion = r.ReadString(4)
 	} else if index != 0 {
 		return nil, fmt.Errorf("bad font index %d", index)
@@ -295,10 +295,10 @@ func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 		return nil, fmt.Errorf("bad SFNT version")
 	}
 	numTables := r.ReadUint16()
-	_ = r.ReadUint16()                  // searchRange
-	_ = r.ReadUint16()                  // entrySelector
-	_ = r.ReadUint16()                  // rangeShift
-	if r.Len() < 16*uint32(numTables) { // can never exceed uint32 as numTables is uint16
+	_ = r.ReadUint16()                 // searchRange
+	_ = r.ReadUint16()                 // entrySelector
+	_ = r.ReadUint16()                 // rangeShift
+	if r.Len() < 16*int64(numTables) { // can never exceed uint32 as numTables is uint16
 		return nil, ErrInvalidFontData
 	}
 
@@ -471,10 +471,10 @@ func (sfnt *SFNT) Write() []byte {
 	var checksumAdjustmentPos uint32
 	offsets, lengths := make([]uint32, numTables), make([]uint32, numTables)
 	for i, tag := range tags {
-		offsets[i] = w.Len()
+		offsets[i] = uint32(w.Len())
 		table := sfnt.Tables[tag]
 		if tag == "head" {
-			checksumAdjustmentPos = w.Len() + 8
+			checksumAdjustmentPos = uint32(w.Len()) + 8
 			w.WriteBytes(table[:8])
 			w.WriteUint32(0)
 			w.WriteBytes(table[12:28])
@@ -483,7 +483,7 @@ func (sfnt *SFNT) Write() []byte {
 		} else {
 			w.WriteBytes(table)
 		}
-		lengths[i] = w.Len() - offsets[i]
+		lengths[i] = uint32(w.Len()) - offsets[i]
 
 		padding := (4 - lengths[i]&3) & 3
 		for i := 0; i < int(padding); i++ {
@@ -530,7 +530,7 @@ func (sfnt *SFNT) parseHead() error {
 	}
 
 	sfnt.Head = &headTable{}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	majorVersion := r.ReadUint16()
 	minorVersion := r.ReadUint16()
 	if majorVersion != 1 && minorVersion != 0 {
@@ -595,7 +595,7 @@ func (sfnt *SFNT) parseHhea() error {
 	}
 
 	sfnt.Hhea = &hheaTable{}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	majorVersion := r.ReadUint16()
 	minorVersion := r.ReadUint16()
 	if majorVersion != 1 && minorVersion != 0 {
@@ -653,7 +653,7 @@ func (sfnt *SFNT) parseVhea() error {
 	}
 
 	sfnt.Vhea = &vheaTable{}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	majorVersion := r.ReadUint16()
 	minorVersion := r.ReadUint16()
 	if majorVersion != 1 && minorVersion != 0 && minorVersion != 1 {
@@ -728,7 +728,7 @@ func (sfnt *SFNT) parseHmtx() error {
 	sfnt.Hmtx.HMetrics = make([]hmtxLongHorMetric, sfnt.Hhea.NumberOfHMetrics)
 	sfnt.Hmtx.LeftSideBearings = make([]int16, sfnt.Maxp.NumGlyphs-sfnt.Hhea.NumberOfHMetrics)
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	for i := 0; i < int(sfnt.Hhea.NumberOfHMetrics); i++ {
 		sfnt.Hmtx.HMetrics[i].AdvanceWidth = r.ReadUint16()
 		sfnt.Hmtx.HMetrics[i].LeftSideBearing = r.ReadInt16()
@@ -786,7 +786,7 @@ func (sfnt *SFNT) parseVmtx() error {
 	sfnt.Vmtx.VMetrics = make([]vmtxLongVerMetric, sfnt.Vhea.NumberOfVMetrics)
 	sfnt.Vmtx.TopSideBearings = make([]int16, sfnt.Maxp.NumGlyphs-sfnt.Vhea.NumberOfVMetrics)
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	for i := 0; i < int(sfnt.Vhea.NumberOfVMetrics); i++ {
 		sfnt.Vmtx.VMetrics[i].AdvanceHeight = r.ReadUint16()
 		sfnt.Vmtx.VMetrics[i].TopSideBearing = r.ReadInt16()
@@ -823,7 +823,7 @@ func (sfnt *SFNT) parseMaxp() error {
 	}
 
 	sfnt.Maxp = &maxpTable{}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	version := binary.BigEndian.Uint32(r.ReadBytes(4))
 	sfnt.Maxp.NumGlyphs = r.ReadUint16()
 	if version == 0x00005000 && !sfnt.IsTrueType && len(b) == 6 {
@@ -909,7 +909,7 @@ func (sfnt *SFNT) parseName() error {
 	}
 
 	sfnt.Name = &nameTable{}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	version := r.ReadUint16()
 	if version != 0 && version != 1 {
 		return fmt.Errorf("name: bad version")
@@ -951,7 +951,7 @@ func (sfnt *SFNT) parseName() error {
 			sfnt.Name.LangTag[i].Value = b[storageOffset+offset : storageOffset+offset+length]
 		}
 	}
-	if r.Pos() != uint32(storageOffset) {
+	if r.Pos() != int64(storageOffset) {
 		return fmt.Errorf("name: bad storageOffset")
 	}
 	return nil
@@ -1020,7 +1020,7 @@ func (sfnt *SFNT) parsePost() error {
 	_, isCFF2 := sfnt.Tables["CFF2"]
 
 	sfnt.Post = &postTable{}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	version := r.ReadUint32()
 	sfnt.Post.ItalicAngle = float64(r.ReadInt32()) / (1 << 16)
 	sfnt.Post.UnderlinePosition = r.ReadInt16()
@@ -1054,10 +1054,10 @@ func (sfnt *SFNT) parsePost() error {
 		sfnt.Post.stringData = [][]byte{}
 		for 2 <= r.Len() {
 			length := r.ReadUint8()
-			if r.Len() < uint32(length) || 63 < length {
+			if r.Len() < int64(length) || 63 < length {
 				return fmt.Errorf("post: bad stringData")
 			}
-			sfnt.Post.stringData = append(sfnt.Post.stringData, r.ReadBytes(uint32(length)))
+			sfnt.Post.stringData = append(sfnt.Post.stringData, r.ReadBytes(int64(length)))
 		}
 		if 1 < r.Len() {
 			return fmt.Errorf("post: bad stringData")

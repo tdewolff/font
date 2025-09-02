@@ -100,7 +100,7 @@ func (glyf *glyfTable) dependencies(glyphID uint16, level int) ([]uint16, error)
 	} else if len(b) == 0 {
 		return deps, nil
 	}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	if r.Len() < 10 {
 		return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 	}
@@ -126,10 +126,10 @@ func (glyf *glyfTable) dependencies(glyphID uint16, level int) ([]uint16, error)
 			deps = append(deps, subDeps...)
 
 			length, more := glyfCompositeLength(flags)
-			if r.Len() < length-4 {
+			if r.Len() < int64(length)-4 {
 				return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 			}
-			_ = r.ReadBytes(length - 4)
+			_ = r.ReadBytes(int64(length) - 4)
 			if !more {
 				break
 			}
@@ -167,7 +167,7 @@ func (glyf *glyfTable) contour(glyphID uint16, level int) (*glyfContour, error) 
 	} else if len(b) == 0 {
 		return &glyfContour{GlyphID: glyphID}, nil
 	}
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	if r.Len() < 10 {
 		return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 	}
@@ -181,7 +181,7 @@ func (glyf *glyfTable) contour(glyphID uint16, level int) (*glyfContour, error) 
 	contour.YMax = r.ReadInt16()
 	if 0 <= numberOfContours {
 		// simple glyph
-		if r.Len() < 2*uint32(numberOfContours)+2 {
+		if r.Len() < 2*int64(numberOfContours)+2 {
 			return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 		}
 		contour.EndPoints = make([]uint16, numberOfContours)
@@ -190,10 +190,10 @@ func (glyf *glyfTable) contour(glyphID uint16, level int) (*glyfContour, error) 
 		}
 
 		instructionLength := r.ReadUint16()
-		if r.Len() < uint32(instructionLength) {
+		if r.Len() < int64(instructionLength) {
 			return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 		}
-		contour.Instructions = r.ReadBytes(uint32(instructionLength))
+		contour.Instructions = r.ReadBytes(int64(instructionLength))
 
 		numPoints := int(contour.EndPoints[numberOfContours-1]) + 1
 		flags := make([]byte, numPoints)
@@ -204,11 +204,11 @@ func (glyf *glyfTable) contour(glyphID uint16, level int) (*glyfContour, error) 
 				return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 			}
 
-			flags[i] = r.ReadByte()
+			flags[i] = r.ReadUint8()
 			contour.OnCurve[i] = flags[i]&0x01 != 0
 			contour.OverlapSimple[i] = flags[i]&0x40 != 0
 			if flags[i]&0x08 != 0 { // REPEAT_FLAG
-				repeats := r.ReadByte()
+				repeats := r.ReadUint8()
 				for j := 1; j <= int(repeats); j++ {
 					flags[i+j] = flags[i]
 					contour.OnCurve[i+j] = contour.OnCurve[i]
@@ -352,10 +352,10 @@ func (glyf *glyfTable) contour(glyphID uint16, level int) (*glyfContour, error) 
 		}
 		if hasInstructions {
 			instructionLength := r.ReadUint16()
-			if r.Len() < uint32(instructionLength) {
+			if r.Len() < int64(instructionLength) {
 				return nil, fmt.Errorf("glyf: bad table for glyphID %v", glyphID)
 			}
-			contour.Instructions = r.ReadBytes(uint32(instructionLength))
+			contour.Instructions = r.ReadBytes(int64(instructionLength))
 		}
 	}
 	return contour, nil
@@ -478,7 +478,7 @@ func (sfnt *SFNT) parseLoca() error {
 		data:   b,
 	}
 	//sfnt.Loca.Offsets = make([]uint32, sfnt.Maxp.NumGlyphs+1)
-	//r := parse.NewBinaryReader(b)
+	//r := parse.NewBinaryReaderBytes(b)
 	//if sfnt.Head.IndexToLocFormat == 0 {
 	//	if uint32(len(b)) != 2*(uint32(sfnt.Maxp.NumGlyphs)+1) {
 	//		return fmt.Errorf("loca: bad table")
@@ -556,7 +556,7 @@ func (sfnt *SFNT) parseKern() error {
 		return fmt.Errorf("kern: bad table")
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	majorVersion := r.ReadUint16()
 	if majorVersion != 0 && majorVersion != 1 {
 		return fmt.Errorf("kern: bad version %d", majorVersion)
@@ -592,21 +592,20 @@ func (sfnt *SFNT) parseKern() error {
 		if format != 0 {
 			// TODO: supported other kern subtable formats
 			continue
-		}
-		if r.Len() < 8 {
+		} else if r.Len() < 8 {
 			return fmt.Errorf("kern: bad subtable %d", j)
 		}
 		nPairs := r.ReadUint16()
 		_ = r.ReadUint16() // searchRange
 		_ = r.ReadUint16() // entrySelector
 		_ = r.ReadUint16() // rangeShift
-		if uint32(length) < 14+6*uint32(nPairs) || r.Len() < uint32(length) {
+		if int64(length) < 14+6*int64(nPairs) || r.Len() < int64(length) {
 			if j+1 == int(nTables) {
 				// for some fonts the subtable's length exceeds what can fit in a uint16
 				// we allow only the last subtable to exceed as long as it stays within the table
-				pairsLength := 6 * uint32(nPairs)
+				pairsLength := 6 * int64(nPairs)
 				pairsLength &= 0xFFFF
-				if uint32(length) != 14+pairsLength || r.Len() < pairsLength {
+				if int64(length) != 14+pairsLength || r.Len() < pairsLength {
 					return fmt.Errorf("kern: bad length for subtable %d", j)
 				}
 			} else {
@@ -631,7 +630,7 @@ func (sfnt *SFNT) parseKern() error {
 		}
 
 		// read unread bytes if length is bigger
-		_ = r.ReadBytes(uint32(length) - (r.Pos() - startPos))
+		_ = r.ReadBytes(int64(length) - (r.Pos() - startPos))
 		sfnt.Kern.Subtables = append(sfnt.Kern.Subtables, subtable)
 	}
 	return nil

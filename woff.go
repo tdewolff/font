@@ -52,7 +52,7 @@ func ParseWOFF(b []byte) ([]byte, error) {
 		return nil, ErrInvalidFontData
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	signature := r.ReadString(4)
 	if signature != "wOFF" {
 		return nil, fmt.Errorf("bad signature")
@@ -195,7 +195,7 @@ func ParseWOFF(b []byte) ([]byte, error) {
 				return nil, ErrInvalidFontData
 			}
 			checksumAdjustment = binary.BigEndian.Uint32(data[8:])
-			checksumAdjustmentPos = w.Len() + 8
+			checksumAdjustmentPos = uint32(w.Len()) + 8
 
 			// to check checksum for head table, replace the overal checksum with zero and reset it at the end
 			binary.BigEndian.PutUint32(data[8:], 0x00000000)
@@ -206,7 +206,7 @@ func ParseWOFF(b []byte) ([]byte, error) {
 
 		w.WriteBytes(data)
 	}
-	if w.Len() != totalSfntSize {
+	if w.Len() != int64(totalSfntSize) {
 		return nil, ErrInvalidFontData
 	} else if checksumAdjustmentPos == 0 {
 		return nil, ErrInvalidFontData

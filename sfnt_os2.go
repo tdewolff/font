@@ -65,7 +65,7 @@ func (sfnt *SFNT) parseOS2() error {
 		return fmt.Errorf("OS/2: bad table")
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	sfnt.OS2 = &os2Table{}
 	sfnt.OS2.Version = r.ReadUint16()
 	if 5 < sfnt.OS2.Version {

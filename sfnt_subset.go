@@ -205,12 +205,12 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			for i, glyphID := range glyphIDs {
 				if glyphID == 0 {
 					// empty .notdef
-					glyfOffsets[i+1] = w.Len()
+					glyfOffsets[i+1] = uint32(w.Len())
 					continue
 				} else if sfntOld.Glyf.IsComposite(glyphID) {
 					// composite glyphs, update glyphIDs and make sure not to write to b
 					b := sfntOld.Glyf.Get(glyphID)
-					start := w.Len()
+					start := uint32(w.Len())
 					w.WriteBytes(b)
 
 					offset := uint32(10)
@@ -323,7 +323,7 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 				if w.Len()%2 == 1 {
 					w.WriteByte(0)
 				}
-				glyfOffsets[i+1] = w.Len()
+				glyfOffsets[i+1] = uint32(w.Len())
 			}
 			if w.Len() <= math.MaxUint16 {
 				indexToLocFormat = 0 // short format
