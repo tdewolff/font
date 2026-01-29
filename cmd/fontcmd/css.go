@@ -56,12 +56,12 @@ func (cmd *CSS) Run() error {
 	// write CSS classes
 	b := bufio.NewWriter(w)
 	for glyphID := uint16(1); glyphID < sfnt.NumGlyphs(); glyphID++ {
-		r := sfnt.Cmap.ToUnicode(glyphID)
+		rs := sfnt.GlyphToUnicode(glyphID)
 		name, ok := fmtName(cmd.Selector, sfnt, glyphID)
-		if !ok || r == 0 {
+		if !ok || len(rs) == 0 {
 			Warning.Printf("missing glyph name or unicode mapping for glyph: %s(%d) ", sfnt.GlyphName(glyphID), glyphID)
 		} else {
-			fmt.Fprintf(b, "%s{content:\"\\%x\"}\n", name, r)
+			fmt.Fprintf(b, "%s{content:\"\\%x\"}\n", name, rs[0])
 		}
 	}
 	if err := b.Flush(); err != nil {

@@ -10,12 +10,7 @@ import (
 )
 
 type Info struct {
-	Index   int    `short:"i" desc:"Font index for font collections"`
-	Table   string `short:"t" desc:"OpenType table name"`
-	GlyphID uint16 `short:"g" name:"glyph" desc:"Glyph ID"`
-	Char    string `short:"c" desc:"Unicode character"`
-	Output  string `short:"o" desc:"Output filename"`
-	Input   string `index:"0" desc:"Input file"`
+	Input string `index:"0" desc:"Input file"`
 }
 
 func (cmd *Info) Run() error {
@@ -26,7 +21,7 @@ func (cmd *Info) Run() error {
 		return err
 	}
 
-	r := parse.NewBinaryReader(b)
+	r := parse.NewBinaryReaderBytes(b)
 	sfntVersion := r.ReadString(4)
 	if sfntVersion == "ttcf" {
 		_ = r.ReadUint32() // majorVersion and minorVersion

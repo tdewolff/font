@@ -13,7 +13,7 @@ import (
 type cmapFormat0 struct {
 	GlyphIdArray [256]uint8
 
-	unicodeMap map[uint16]rune
+	unicodeMap map[uint16][]rune
 	once       sync.Once
 }
 
@@ -24,18 +24,17 @@ func (subtable *cmapFormat0) Get(r rune) (uint16, bool) {
 	return uint16(subtable.GlyphIdArray[r]), true
 }
 
-func (subtable *cmapFormat0) ToUnicode(glyphID uint16) (rune, bool) {
+func (subtable *cmapFormat0) ToUnicode(glyphID uint16) []rune {
 	if 256 <= glyphID {
-		return 0, false
+		return nil
 	}
 	subtable.once.Do(func() {
-		subtable.unicodeMap = make(map[uint16]rune, 256)
+		subtable.unicodeMap = make(map[uint16][]rune, 256)
 		for r, id := range subtable.GlyphIdArray {
-			subtable.unicodeMap[uint16(id)] = rune(r)
+			subtable.unicodeMap[uint16(id)] = append(subtable.unicodeMap[uint16(id)], rune(r))
 		}
 	})
-	r, ok := subtable.unicodeMap[glyphID]
-	return r, ok
+	return subtable.unicodeMap[glyphID]
 }
 
 type cmapFormat4 struct {
@@ -45,7 +44,7 @@ type cmapFormat4 struct {
 	IdRangeOffset []uint16
 	GlyphIdArray  []uint16
 
-	unicodeMap map[uint16]rune
+	unicodeMap map[uint16][]rune
 	once       sync.Once
 }
 
@@ -70,9 +69,9 @@ func (subtable *cmapFormat4) Get(r rune) (uint16, bool) {
 	return 0, false
 }
 
-func (subtable *cmapFormat4) ToUnicode(glyphID uint16) (rune, bool) {
+func (subtable *cmapFormat4) ToUnicode(glyphID uint16) []rune {
 	subtable.once.Do(func() {
-		subtable.unicodeMap = map[uint16]rune{}
+		subtable.unicodeMap = map[uint16][]rune{}
 		n := len(subtable.StartCode)
 		for i := 0; i < n; i++ {
 			for r := rune(subtable.StartCode[i]); r <= rune(subtable.EndCode[i]); r++ {
@@ -87,19 +86,19 @@ func (subtable *cmapFormat4) ToUnicode(glyphID uint16) (rune, bool) {
 					index := int(subtable.IdRangeOffset[i]/2) + int(uint16(r)-subtable.StartCode[i]) - (n - i)
 					id = subtable.GlyphIdArray[index]
 				}
-				if _, ok := subtable.unicodeMap[id]; !ok {
-					subtable.unicodeMap[id] = r
-				}
+				subtable.unicodeMap[id] = append(subtable.unicodeMap[id], r)
 			}
 		}
 	})
-	r, ok := subtable.unicodeMap[glyphID]
-	return r, ok
+	return subtable.unicodeMap[glyphID]
 }
 
 type cmapFormat6 struct {
 	FirstCode    uint16
 	GlyphIdArray []uint16
+
+	unicodeMap map[uint16][]rune
+	once       sync.Once
 }
 
 func (subtable *cmapFormat6) Get(r rune) (uint16, bool) {
@@ -109,13 +108,15 @@ func (subtable *cmapFormat6) Get(r rune) (uint16, bool) {
 	return subtable.GlyphIdArray[uint32(r)-uint32(subtable.FirstCode)], true
 }
 
-func (subtable *cmapFormat6) ToUnicode(glyphID uint16) (rune, bool) {
-	for i, id := range subtable.GlyphIdArray {
-		if id == glyphID {
-			return rune(subtable.FirstCode) + rune(i), true
+func (subtable *cmapFormat6) ToUnicode(glyphID uint16) []rune {
+	subtable.once.Do(func() {
+		subtable.unicodeMap = make(map[uint16][]rune, len(subtable.GlyphIdArray))
+		for i, id := range subtable.GlyphIdArray {
+			r := rune(subtable.FirstCode) + rune(i)
+			subtable.unicodeMap[id] = append(subtable.unicodeMap[id], r)
 		}
-	}
-	return 0, false
+	})
+	return subtable.unicodeMap[glyphID]
 }
 
 type cmapFormat12 struct {
@@ -123,7 +124,7 @@ type cmapFormat12 struct {
 	EndCharCode   []uint32
 	StartGlyphID  []uint32
 
-	unicodeMap map[uint16]rune
+	unicodeMap map[uint16][]rune
 	once       sync.Once
 }
 
@@ -139,26 +140,23 @@ func (subtable *cmapFormat12) Get(r rune) (uint16, bool) {
 	return 0, false
 }
 
-func (subtable *cmapFormat12) ToUnicode(glyphID uint16) (rune, bool) {
+func (subtable *cmapFormat12) ToUnicode(glyphID uint16) []rune {
 	subtable.once.Do(func() {
-		subtable.unicodeMap = map[uint16]rune{}
+		subtable.unicodeMap = map[uint16][]rune{}
 		for i := 0; i < len(subtable.StartCharCode); i++ {
 			for r := subtable.StartCharCode[i]; r <= subtable.EndCharCode[i]; r++ {
 				id := uint16((r - subtable.StartCharCode[i]) + subtable.StartGlyphID[i])
-				if _, ok := subtable.unicodeMap[id]; !ok {
-					subtable.unicodeMap[id] = rune(r)
-				}
+				subtable.unicodeMap[id] = append(subtable.unicodeMap[id], rune(r))
 			}
 		}
 	})
-	r, ok := subtable.unicodeMap[glyphID]
-	return r, ok
+	return subtable.unicodeMap[glyphID]
 }
 
 type cmapFormat14 struct {
 	glyphIDMap map[rune]uint16
 
-	unicodeMap map[uint16]rune
+	unicodeMap map[uint16][]rune
 	once       sync.Once
 }
 
@@ -167,18 +165,18 @@ func (subtable *cmapFormat14) Get(r rune) (uint16, bool) {
 	return glyphID, ok
 }
 
-func (subtable *cmapFormat14) ToUnicode(glyphID uint16) (rune, bool) {
+func (subtable *cmapFormat14) ToUnicode(glyphID uint16) []rune {
 	subtable.once.Do(func() {
-		subtable.unicodeMap = make(map[uint16]rune, len(subtable.glyphIDMap))
-		for r, glyphID := range subtable.glyphIDMap {
-			subtable.unicodeMap[glyphID] = r
+		subtable.unicodeMap = make(map[uint16][]rune, len(subtable.glyphIDMap))
+		for r, id := range subtable.glyphIDMap {
+			subtable.unicodeMap[id] = append(subtable.unicodeMap[id], r)
 		}
 	})
-	r, ok := subtable.unicodeMap[glyphID]
-	return r, ok
+	return subtable.unicodeMap[glyphID]
 }
 
 func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16) {
+	// rs is sorted
 	data := cmapFormat4{}
 	addSegment := func(firstCode, lastCode rune, glyphIDs []uint16, contiguous bool) {
 		data.EndCode = append(data.EndCode, uint16(lastCode))
@@ -206,7 +204,9 @@ func cmapWriteFormat4(w *parse.BinaryWriter, rs []rune, runeMap map[rune]uint16)
 	i0 := 0
 	glyphIDs := []uint16{runeMap[rs[0]]}
 	for i := 1; i <= len(rs); i++ {
-		if i == len(rs) || rs[i-1]+1 != rs[i] {
+		if i < len(rs) && rs[i] == rs[i-1] {
+			continue
+		} else if i == len(rs) || rs[i-1]+1 != rs[i] {
 			// Find subsets of glyphIDs that are contiguous for at least 9 glyphs in a row.
 			// Track index before which is already written as segment (j0) and track index
 			// before which glyph indices are not contiguous (jc). Write a new segments whenever we
@@ -365,7 +365,7 @@ type cmapEncodingRecord struct {
 
 type cmapSubtable interface {
 	Get(rune) (uint16, bool)
-	ToUnicode(uint16) (rune, bool)
+	ToUnicode(uint16) []rune
 }
 
 type cmapTable struct {
@@ -383,14 +383,21 @@ func (cmap *cmapTable) Get(r rune) uint16 {
 	return 0
 }
 
-// ToUnicode returns the rune for the corresponding glyph ID. It looks for each subtable in the order in which they appear and returns the first match, or 0 when no match is found.
-func (cmap *cmapTable) ToUnicode(glyphID uint16) rune {
+// ToUnicode returns all runes for the corresponding glyph ID. It looks for each subtable in the order in which they appear and returns referenced runes for the glyph ID, or nil if none.
+func (cmap *cmapTable) ToUnicode(glyphID uint16) []rune {
+	var rs []rune
 	for _, subtable := range cmap.Subtables {
-		if r, ok := subtable.ToUnicode(glyphID); ok {
-			return r
+	AppendLoop:
+		for _, r := range subtable.ToUnicode(glyphID) {
+			for _, r2 := range rs {
+				if r2 == r {
+					continue AppendLoop
+				}
+			}
+			rs = append(rs, r)
 		}
 	}
-	return 0
+	return rs
 }
 
 func (sfnt *SFNT) parseCmap() error {

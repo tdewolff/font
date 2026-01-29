@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"os"
 	"sort"
 	"sync"
 	"time"
@@ -81,12 +80,34 @@ type SFNT struct {
 
 // NumGlyphs returns the number of glyphs the font contains.
 func (sfnt *SFNT) NumGlyphs() uint16 {
+	if sfnt.Maxp == nil {
+		return 0
+	}
 	return sfnt.Maxp.NumGlyphs
 }
 
-// GlyphIndex returns the glyphID for a given rune. When the rune is not defined it returns 0.
+// UnitsPerEm returns the number of units per em
+func (sfnt *SFNT) UnitsPerEm() uint16 {
+	if sfnt.Head == nil {
+		return 0
+	}
+	return sfnt.Head.UnitsPerEm
+}
+
+// GlyphIndex returns the glyph ID for the corresponding rune. It looks for each character map subtable in the order in which they appear and returns the first match, or 0 when no match is found.
 func (sfnt *SFNT) GlyphIndex(r rune) uint16 {
+	if sfnt.Cmap == nil {
+		return 0
+	}
 	return sfnt.Cmap.Get(r)
+}
+
+// GlyphToUnicode returns the runes for the corresponding glyph ID. It looks for each character map subtable in the order in which they appear and returns the runes which reference the glyph ID, or nil when no match is found. This is the inverse mapping of the character map table and is cached after the first call. Each glyph may be mapped from multiple runes.
+func (sfnt *SFNT) GlyphToUnicode(glyphID uint16) []rune {
+	if sfnt.Cmap == nil {
+		return nil
+	}
+	return sfnt.Cmap.ToUnicode(glyphID)
 }
 
 // GlyphName returns the name of the glyph. It returns an empty string when no name exists.
@@ -199,7 +220,11 @@ func (sfnt *SFNT) Kerning(left, right uint16) int16 {
 
 // ParseSFNT parses an OpenType file format (TTF, OTF, TTC). The index is used for font collections to select a single font.
 func ParseSFNT(b []byte, index int) (*SFNT, error) {
-	return parseSFNT(b, index, false)
+	sfntBytes, err := ToSFNT(b)
+	if err != nil {
+		return nil, err
+	}
+	return parseSFNT(sfntBytes, index, false)
 }
 
 // ParseEmbeddedSFNT is like ParseSFNT but for embedded font files in PDFs. It allows font files with fewer required tables.
@@ -209,47 +234,47 @@ func ParseEmbeddedSFNT(b []byte, index int) (*SFNT, error) {
 
 // ParseCFF parses a bare CFF font file, such as those embedded in PDFs.
 // TODO: work in progress
-func ParseCFF(b []byte) (*SFNT, error) {
-	w, _ := os.Create("out.cff")
-	w.Write(b)
-	w.Close()
-
-	sfnt := &SFNT{}
-	sfnt.Version = "OTTO"
-	sfnt.IsCFF = true
-	sfnt.Tables = map[string][]byte{
-		"CFF ": b,
-	}
-	if err := sfnt.parseCFF(); err != nil {
-		return nil, err
-	} else if 256 <= sfnt.CFF.charStrings.Len() {
-		return nil, fmt.Errorf("unsupported CFF with more than 255 glyphs")
-	}
-	sfnt.Maxp = &maxpTable{
-		NumGlyphs: uint16(sfnt.CFF.charStrings.Len()),
-	}
-
-	encoding := windows1252
-
-	cmapFormat := &cmapFormat12{}
-	cmapFormat.StartCharCode = []uint32{uint32(encoding[0])}
-	cmapFormat.StartGlyphID = []uint32{0}
-	for id, r := range encoding {
-		d := uint32(r) - cmapFormat.StartCharCode[len(cmapFormat.StartCharCode)-1]
-		if uint32(id) != cmapFormat.StartGlyphID[len(cmapFormat.StartGlyphID)-1]+d {
-			cmapFormat.StartCharCode = append(cmapFormat.StartCharCode, uint32(r))
-			cmapFormat.EndCharCode = append(cmapFormat.EndCharCode, uint32(encoding[id-1]))
-			cmapFormat.StartGlyphID = append(cmapFormat.StartGlyphID, uint32(id))
-		}
-	}
-	cmapFormat.EndCharCode = append(cmapFormat.EndCharCode, uint32(encoding[len(encoding)-1]))
-	sfnt.Cmap = &cmapTable{
-		Subtables: []cmapSubtable{cmapFormat},
-	}
-
-	fmt.Println(sfnt.CFF.charStrings.Len())
-	return sfnt, nil
-}
+//func ParseCFF(b []byte) (*SFNT, error) {
+//	w, _ := os.Create("out.cff")
+//	w.Write(b)
+//	w.Close()
+//
+//	sfnt := &SFNT{}
+//	sfnt.Version = "OTTO"
+//	sfnt.IsCFF = true
+//	sfnt.Tables = map[string][]byte{
+//		"CFF ": b,
+//	}
+//	if err := sfnt.parseCFF(); err != nil {
+//		return nil, err
+//	} else if 256 <= sfnt.CFF.charStrings.Len() {
+//		return nil, fmt.Errorf("unsupported CFF with more than 255 glyphs")
+//	}
+//	sfnt.Maxp = &maxpTable{
+//		NumGlyphs: uint16(sfnt.CFF.charStrings.Len()),
+//	}
+//
+//	encoding := windows1252
+//
+//	cmapFormat := &cmapFormat12{}
+//	cmapFormat.StartCharCode = []uint32{uint32(encoding[0])}
+//	cmapFormat.StartGlyphID = []uint32{0}
+//	for id, r := range encoding {
+//		d := uint32(r) - cmapFormat.StartCharCode[len(cmapFormat.StartCharCode)-1]
+//		if uint32(id) != cmapFormat.StartGlyphID[len(cmapFormat.StartGlyphID)-1]+d {
+//			cmapFormat.StartCharCode = append(cmapFormat.StartCharCode, uint32(r))
+//			cmapFormat.EndCharCode = append(cmapFormat.EndCharCode, uint32(encoding[id-1]))
+//			cmapFormat.StartGlyphID = append(cmapFormat.StartGlyphID, uint32(id))
+//		}
+//	}
+//	cmapFormat.EndCharCode = append(cmapFormat.EndCharCode, uint32(encoding[len(encoding)-1]))
+//	sfnt.Cmap = &cmapTable{
+//		Subtables: []cmapSubtable{cmapFormat},
+//	}
+//
+//	fmt.Println(sfnt.CFF.charStrings.Len())
+//	return sfnt, nil
+//}
 
 func parseSFNT(b []byte, index int, embedded bool) (*SFNT, error) {
 	if len(b) < 12 || uint(math.MaxUint32) < uint(len(b)) {

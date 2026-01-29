@@ -11,11 +11,12 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/tdewolff/canvas"
-	"github.com/tdewolff/font"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/tiff"
 	"golang.org/x/image/vector"
+
+	"github.com/tdewolff/canvas"
+	"github.com/tdewolff/font"
 )
 
 type Show struct {
@@ -27,7 +28,7 @@ type Show struct {
 	PPEM    uint16  `default:"40" desc:"Pixels per em-square"`
 	Scale   int     `default:"4" desc:"Image scale"`
 	Ratio   float64 `desc:"Image width/height ratio"`
-	Output  string  `short:"o" desc:"Output filename"`
+	Output  string  `short:"o" desc:"Output filename, supports jpg, png, gif, and tiff"`
 	Input   string  `index:"0" desc:"Input file"`
 }
 
@@ -63,7 +64,9 @@ func (cmd *Show) Run() error {
 		}
 	}
 	fmt.Println("GlyphID:", cmd.GlyphID)
-	fmt.Printf("Char: %v (%v)\n", printableRune(sfnt.Cmap.ToUnicode(cmd.GlyphID)), sfnt.Cmap.ToUnicode(cmd.GlyphID))
+	for _, r := range sfnt.GlyphToUnicode(cmd.GlyphID) {
+		fmt.Printf("Char: %v (%v)\n", printableRune(r), r)
+	}
 	if name := sfnt.GlyphName(cmd.GlyphID); name != "" {
 		fmt.Println("Name:", name)
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 type MergeOptions struct {
-	RearrangeCmap bool
+	RearrangeCmap bool // Rearrange glyph unicode mapping, assigning a sequential codepoint for each glyph in order starting at 33 (exclamation). May be useful when embedding into a PDF with a custom unicode mapping.
 }
 
 // Merge merges the glyphs of another font into the current one in-place by merging the glyf, loca, kern tables (or CFF table for CFF fonts), as well as the hmtx, cmap, and post tables. Also updates the maxp, head, and OS/2 tables. The other font remains untouched.
@@ -306,13 +306,14 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 			}
 		} else {
 			for glyphID := 0; glyphID < int(numGlyphs); glyphID++ {
-				var r rune
+				var rsGlyph []rune
 				if glyphID < int(origNumGlyphs) {
-					r = sfnt.Cmap.ToUnicode(uint16(glyphID))
+					rsGlyph = sfnt.Cmap.ToUnicode(uint16(glyphID))
 				} else {
-					r = sfnt2.Cmap.ToUnicode(uint16(1+glyphID) - origNumGlyphs) // +1 to skip .notdef
+					rsGlyph = sfnt2.Cmap.ToUnicode(uint16(1+glyphID) - origNumGlyphs) // +1 to skip .notdef
 				}
-				if r != 0 {
+				rs = append(rs, rsGlyph...)
+				for _, r := range rsGlyph {
 					if otherGlyphID, ok := runeMap[r]; ok {
 						glyphName, otherGlyphName := "", ""
 						if glyphID < int(origNumGlyphs) {
@@ -327,7 +328,6 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 						}
 						return fmt.Errorf("cmap: two or more glyphs have the same unicode mapping: %s(%d) and %s(%d)", glyphName, glyphID, otherGlyphName, otherGlyphID)
 					}
-					rs = append(rs, r)
 					runeMap[r] = uint16(glyphID)
 				}
 			}
@@ -352,22 +352,21 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 
 	if _, ok := sfnt.Tables["post"]; ok && sfnt.Post.NumGlyphs != 0 && sfnt2.Post.NumGlyphs != 0 {
 		if sfnt.Post.NumGlyphs == 0 {
-			sfnt.Post.glyphNameIndex = make([]uint16, 0, numGlyphs)
-			for glyphID := 0; glyphID < int(origNumGlyphs); glyphID++ {
-				sfnt.Post.glyphNameIndex = append(sfnt.Post.glyphNameIndex, 0)
-			}
+			// initialise the first font to zero
+			sfnt.Post.glyphNameIndex = make([]uint16, origNumGlyphs, numGlyphs)
 		}
-		for glyphID := 1; glyphID < int(sfnt2.NumGlyphs()); glyphID++ {
+		for glyphID2 := 1; glyphID2 < int(sfnt2.NumGlyphs()); glyphID2++ {
 			var index uint16
-			name := sfnt2.Post.Get(uint16(glyphID))
-			if glyphID2, ok := sfnt.Post.Find(name); ok {
-				index = sfnt.Post.glyphNameIndex[glyphID2]
+			name := sfnt2.Post.Get(uint16(glyphID2))
+			if glyphID, ok := sfnt.Post.Find(name); ok {
+				// reuse existing names
+				index = sfnt.Post.glyphNameIndex[glyphID]
 			} else if math.MaxUint16 < len(sfnt.Post.stringData)+258 {
 				return fmt.Errorf("invalid post table: stringData has too many entries")
 			} else {
 				index = uint16(len(sfnt.Post.stringData) + 258)
 				sfnt.Post.stringData = append(sfnt.Post.stringData, []byte(name))
-				sfnt.Post.nameMap[name] = uint16(glyphID)
+				sfnt.Post.nameMap[name] = uint16(glyphID2)
 			}
 			sfnt.Post.glyphNameIndex = append(sfnt.Post.glyphNameIndex, index)
 		}

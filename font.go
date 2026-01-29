@@ -101,12 +101,10 @@ func NewSFNTReader(r io.Reader) (*bytes.Reader, error) {
 }
 
 // ParseFont parses a byte slice and of a TTF, OTF, WOFF, WOFF2, or EOT font format. It will return the parsed font and its mimetype.
+// DEPRECATED: use ParseSFNT
 func ParseFont(b []byte, index int) (*SFNT, error) {
-	sfntBytes, err := ToSFNT(b)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSFNT(sfntBytes, index)
+	fmt.Println("WARNING: font.ParseFont is deprecated, use font.ParseSFNT")
+	return ParseSFNT(b, index)
 }
 
 // FromGoFreetype parses a structure from truetype.Font to a valid SFNT byte slice.

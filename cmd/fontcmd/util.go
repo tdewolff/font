@@ -83,11 +83,11 @@ func fmtName(pattern string, sfnt *font.SFNT, glyphID uint16) (string, bool) {
 				}
 				newName.WriteString(glyphName)
 			case 'u':
-				r := sfnt.Cmap.ToUnicode(glyphID)
-				if r == 0 {
+				rs := sfnt.GlyphToUnicode(glyphID)
+				if len(rs) == 0 {
 					return "", false
 				}
-				fmt.Fprintf(newName, "%x", r)
+				fmt.Fprintf(newName, "%x", rs[0])
 			}
 		} else {
 			newName.WriteByte(c)

@@ -16,7 +16,7 @@ var (
 )
 
 type SubsetOptions struct {
-	Tables []string
+	Tables []string // names of tables to include, special values are KeepAllTables, KeepMinTables, or KeepPDFTables
 }
 
 // Subset trims an SFNT font to contain only the passed glyphIDs, thereby resulting in a significant size reduction. The glyphIDs will apear in the specified order in the file and their dependencies are added to the end.
@@ -153,8 +153,9 @@ func (sfnt *SFNT) Subset(glyphIDs []uint16, options SubsetOptions) (*SFNT, error
 			rs := make([]rune, 0, len(glyphIDs))
 			runeMap := make(map[rune]uint16, len(glyphIDs)) // for OS/2
 			for subsetGlyphID, glyphID := range glyphIDs {
-				if r := sfntOld.Cmap.ToUnicode(glyphID); r != 0 {
-					rs = append(rs, r)
+				rsGlyph := sfntOld.Cmap.ToUnicode(glyphID)
+				rs = append(rs, rsGlyph...)
+				for _, r := range rsGlyph {
 					runeMap[r] = uint16(subsetGlyphID)
 				}
 			}
