@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/tdewolff/canvas"
@@ -48,11 +47,19 @@ func main() {
 
 	width := scale * float64(x)
 	height := scale * float64(ascender+descender)
-	fmt.Println(scale, x, ascender+descender)
 
 	c := canvas.New(width, height)
 	ctx := canvas.NewContext(c)
+
+	ctx.SetFillColor(canvas.Black)
 	ctx.DrawPath(0.0, 0.0, p)
+
+	c.Fit(1.0)
+
+	ctx.SetFillColor(canvas.White)
+	ctx.SetZIndex(-1)
+	ctx.DrawPath(0.0, 0.0, canvas.Rectangle(c.W, c.H))
+
 	if err := renderers.Write("out.png", c, canvas.Resolution(dpmm)); err != nil {
 		panic(err)
 	}
