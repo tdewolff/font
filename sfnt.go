@@ -872,6 +872,26 @@ func (sfnt *SFNT) parseMaxp() error {
 	return fmt.Errorf("maxp: bad table")
 }
 
+func (maxp *maxpTable) Write() []byte {
+	w := parse.NewBinaryWriter(make([]byte, 0, 32))
+	w.WriteUint32(uint32(0x00010000))
+	w.WriteUint16(maxp.NumGlyphs)
+	w.WriteUint16(maxp.MaxPoints)
+	w.WriteUint16(maxp.MaxContours)
+	w.WriteUint16(maxp.MaxCompositePoints)
+	w.WriteUint16(maxp.MaxCompositeContours)
+	w.WriteUint16(maxp.MaxZones)
+	w.WriteUint16(maxp.MaxTwilightPoints)
+	w.WriteUint16(maxp.MaxStorage)
+	w.WriteUint16(maxp.MaxFunctionDefs)
+	w.WriteUint16(maxp.MaxInstructionDefs)
+	w.WriteUint16(maxp.MaxStackElements)
+	w.WriteUint16(maxp.MaxSizeOfInstructions)
+	w.WriteUint16(maxp.MaxComponentElements)
+	w.WriteUint16(maxp.MaxComponentDepth)
+	return w.Bytes()
+}
+
 ////////////////////////////////////////////////////////////////
 
 type nameRecord struct {
