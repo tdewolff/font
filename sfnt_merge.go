@@ -27,19 +27,21 @@ func (sfnt *SFNT) Merge(sfnt2 *SFNT, options MergeOptions) error {
 	numGlyphs := origNumGlyphs + sfnt2.NumGlyphs() - 1 // -1 to skip .notdef
 	if _, ok := sfnt.Tables["maxp"]; ok {
 		sfnt.Maxp.NumGlyphs = numGlyphs
-		sfnt.Maxp.MaxPoints = max(sfnt.Maxp.MaxPoints, sfnt2.Maxp.MaxPoints)
-		sfnt.Maxp.MaxContours = max(sfnt.Maxp.MaxContours, sfnt2.Maxp.MaxContours)
-		sfnt.Maxp.MaxCompositePoints = max(sfnt.Maxp.MaxCompositePoints, sfnt2.Maxp.MaxCompositePoints)
-		sfnt.Maxp.MaxCompositeContours = max(sfnt.Maxp.MaxCompositeContours, sfnt2.Maxp.MaxCompositeContours)
-		sfnt.Maxp.MaxZones = max(sfnt.Maxp.MaxZones, sfnt2.Maxp.MaxZones)
-		sfnt.Maxp.MaxTwilightPoints = max(sfnt.Maxp.MaxTwilightPoints, sfnt2.Maxp.MaxTwilightPoints)
-		sfnt.Maxp.MaxStorage = max(sfnt.Maxp.MaxStorage, sfnt2.Maxp.MaxStorage)
-		sfnt.Maxp.MaxFunctionDefs = max(sfnt.Maxp.MaxFunctionDefs, sfnt2.Maxp.MaxFunctionDefs)
-		sfnt.Maxp.MaxInstructionDefs = max(sfnt.Maxp.MaxInstructionDefs, sfnt2.Maxp.MaxInstructionDefs)
-		sfnt.Maxp.MaxStackElements = max(sfnt.Maxp.MaxStackElements, sfnt2.Maxp.MaxStackElements)
-		sfnt.Maxp.MaxSizeOfInstructions = max(sfnt.Maxp.MaxSizeOfInstructions, sfnt2.Maxp.MaxSizeOfInstructions)
-		sfnt.Maxp.MaxComponentElements = max(sfnt.Maxp.MaxComponentElements, sfnt2.Maxp.MaxComponentElements)
-		sfnt.Maxp.MaxComponentDepth = max(sfnt.Maxp.MaxComponentDepth, sfnt2.Maxp.MaxComponentDepth)
+		if !sfnt.IsCFF {
+			sfnt.Maxp.MaxPoints = max(sfnt.Maxp.MaxPoints, sfnt2.Maxp.MaxPoints)
+			sfnt.Maxp.MaxContours = max(sfnt.Maxp.MaxContours, sfnt2.Maxp.MaxContours)
+			sfnt.Maxp.MaxCompositePoints = max(sfnt.Maxp.MaxCompositePoints, sfnt2.Maxp.MaxCompositePoints)
+			sfnt.Maxp.MaxCompositeContours = max(sfnt.Maxp.MaxCompositeContours, sfnt2.Maxp.MaxCompositeContours)
+			sfnt.Maxp.MaxZones = max(sfnt.Maxp.MaxZones, sfnt2.Maxp.MaxZones)
+			sfnt.Maxp.MaxTwilightPoints = max(sfnt.Maxp.MaxTwilightPoints, sfnt2.Maxp.MaxTwilightPoints)
+			sfnt.Maxp.MaxStorage = max(sfnt.Maxp.MaxStorage, sfnt2.Maxp.MaxStorage)
+			sfnt.Maxp.MaxFunctionDefs = max(sfnt.Maxp.MaxFunctionDefs, sfnt2.Maxp.MaxFunctionDefs)
+			sfnt.Maxp.MaxInstructionDefs = max(sfnt.Maxp.MaxInstructionDefs, sfnt2.Maxp.MaxInstructionDefs)
+			sfnt.Maxp.MaxStackElements = max(sfnt.Maxp.MaxStackElements, sfnt2.Maxp.MaxStackElements)
+			sfnt.Maxp.MaxSizeOfInstructions = max(sfnt.Maxp.MaxSizeOfInstructions, sfnt2.Maxp.MaxSizeOfInstructions)
+			sfnt.Maxp.MaxComponentElements = max(sfnt.Maxp.MaxComponentElements, sfnt2.Maxp.MaxComponentElements)
+			sfnt.Maxp.MaxComponentDepth = max(sfnt.Maxp.MaxComponentDepth, sfnt2.Maxp.MaxComponentDepth)
+		}
 		sfnt.Tables["maxp"] = sfnt.Maxp.Write()
 	}
 

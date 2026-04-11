@@ -825,6 +825,7 @@ func (sfnt *SFNT) parseVmtx() error {
 ////////////////////////////////////////////////////////////////
 
 type maxpTable struct {
+	Version               uint32
 	NumGlyphs             uint16
 	MaxPoints             uint16
 	MaxContours           uint16
@@ -849,11 +850,11 @@ func (sfnt *SFNT) parseMaxp() error {
 
 	sfnt.Maxp = &maxpTable{}
 	r := parse.NewBinaryReaderBytes(b)
-	version := binary.BigEndian.Uint32(r.ReadBytes(4))
+	sfnt.Maxp.Version = binary.BigEndian.Uint32(r.ReadBytes(4))
 	sfnt.Maxp.NumGlyphs = r.ReadUint16()
-	if version == 0x00005000 && !sfnt.IsTrueType && len(b) == 6 {
+	if sfnt.Maxp.Version == 0x00005000 && !sfnt.IsTrueType && len(b) == 6 {
 		return nil
-	} else if version == 0x00010000 && !sfnt.IsCFF && len(b) == 32 {
+	} else if sfnt.Maxp.Version == 0x00010000 && !sfnt.IsCFF && len(b) == 32 {
 		sfnt.Maxp.MaxPoints = r.ReadUint16()
 		sfnt.Maxp.MaxContours = r.ReadUint16()
 		sfnt.Maxp.MaxCompositePoints = r.ReadUint16()
@@ -874,21 +875,23 @@ func (sfnt *SFNT) parseMaxp() error {
 
 func (maxp *maxpTable) Write() []byte {
 	w := parse.NewBinaryWriter(make([]byte, 0, 32))
-	w.WriteUint32(uint32(0x00010000))
+	w.WriteUint32(maxp.Version)
 	w.WriteUint16(maxp.NumGlyphs)
-	w.WriteUint16(maxp.MaxPoints)
-	w.WriteUint16(maxp.MaxContours)
-	w.WriteUint16(maxp.MaxCompositePoints)
-	w.WriteUint16(maxp.MaxCompositeContours)
-	w.WriteUint16(maxp.MaxZones)
-	w.WriteUint16(maxp.MaxTwilightPoints)
-	w.WriteUint16(maxp.MaxStorage)
-	w.WriteUint16(maxp.MaxFunctionDefs)
-	w.WriteUint16(maxp.MaxInstructionDefs)
-	w.WriteUint16(maxp.MaxStackElements)
-	w.WriteUint16(maxp.MaxSizeOfInstructions)
-	w.WriteUint16(maxp.MaxComponentElements)
-	w.WriteUint16(maxp.MaxComponentDepth)
+	if maxp.Version == 0x00010000 {
+		w.WriteUint16(maxp.MaxPoints)
+		w.WriteUint16(maxp.MaxContours)
+		w.WriteUint16(maxp.MaxCompositePoints)
+		w.WriteUint16(maxp.MaxCompositeContours)
+		w.WriteUint16(maxp.MaxZones)
+		w.WriteUint16(maxp.MaxTwilightPoints)
+		w.WriteUint16(maxp.MaxStorage)
+		w.WriteUint16(maxp.MaxFunctionDefs)
+		w.WriteUint16(maxp.MaxInstructionDefs)
+		w.WriteUint16(maxp.MaxStackElements)
+		w.WriteUint16(maxp.MaxSizeOfInstructions)
+		w.WriteUint16(maxp.MaxComponentElements)
+		w.WriteUint16(maxp.MaxComponentDepth)
+	}
 	return w.Bytes()
 }
 
