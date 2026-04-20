@@ -180,3 +180,23 @@ func writeFont(filename, mimetype, encoding string, force bool, sfnt *font.SFNT)
 	}
 	return n, nil
 }
+
+func parseHexRunes(rs []rune) (uint64, bool) {
+	var sum uint64
+	if 16 < len(rs) {
+		return 0, false // too big for uint64
+	}
+	for _, r := range rs {
+		sum <<= 4
+		if '0' <= r && r <= '9' {
+			sum += uint64(r - '0')
+		} else if 'a' <= r && r <= 'f' {
+			sum += uint64(r - 'a')
+		} else if 'A' <= r && r <= 'F' {
+			sum += uint64(r - 'A')
+		} else {
+			return 0, false // invalid character
+		}
+	}
+	return sum, true
+}

@@ -17,7 +17,7 @@ type Subset struct {
 	Quiet         bool     `short:"q" desc:"Suppress output except for errors."`
 	Force         bool     `short:"f" desc:"Force overwriting existing files."`
 	Glyphs        []string `short:"g" name:"glyph" desc:"List of glyph IDs to keep, eg. 1-100."`
-	Chars         []string `short:"c" name:"char" desc:"List of literal characters to keep, eg. a-z."`
+	Chars         []string `short:"c" name:"char" desc:"List of literal characters to keep, eg. a-z. The same escape sequences are supported as for Go strings, adding \-."`
 	Names         []string `short:"n" name:"name" desc:"List of glyph names to keep, eg. space."`
 	Unicodes      []string `short:"u" name:"unicode" desc:"List of unicode IDs to keep, eg. f0fc-f0ff."`
 	UnicodeRanges []string `short:"r" name:"range" desc:"List of unicode categories or scripts to keep, eg. L (for Letters) or Latin (latin script). See https://pkg.go.dev/unicode for all supported values."`
@@ -86,14 +86,88 @@ func (cmd *Subset) Run() error {
 	for _, s := range cmd.Chars {
 		prev := rune(-1)
 		rangeChars := false
-		for _, r := range s {
+		runes := []rune(s)
+		for i := 0; i < len(runes); i++ {
+			r := runes[i]
+			if r == '\\' && i+1 < len(runes) {
+				switch runes[i+1] {
+				case 'a':
+					r = '\u0007'
+					i++
+				case 'b':
+					r = '\u0008'
+					i++
+				case 't':
+					r = '\u0009'
+					i++
+				case 'n':
+					r = '\u000A'
+					i++
+				case 'v':
+					r = '\u000B'
+					i++
+				case 'f':
+					r = '\u000C'
+					i++
+				case 'r':
+					r = '\u000D'
+					i++
+				case '"':
+					r = '\u0022'
+					i++
+				case '\'':
+					r = '\u0027'
+					i++
+				case '-':
+					r = '\u002D'
+					i++
+				case '\\':
+					r = '\u005C'
+					i++
+				case 'x':
+					if i+3 < len(runes) {
+						if h, ok := parseHexRunes(runes[i+2 : i+4]); ok {
+							r = rune(h)
+							i += 3
+						} else {
+							Warning.Println("invalid escape sequence:", string(runes[i:i+4]))
+						}
+					} else {
+						Warning.Println("invalid escape sequence:", string(runes[i:i+4]))
+					}
+				case 'u':
+					if i+5 < len(runes) {
+						if h, ok := parseHexRunes(runes[i+2 : i+6]); ok {
+							r = rune(h)
+							i += 5
+						} else {
+							Warning.Println("invalid escape sequence:", string(runes[i:i+6]))
+						}
+					} else {
+						Warning.Println("invalid escape sequence:", string(runes[i:i+6]))
+					}
+				case 'U':
+					if i+9 < len(runes) {
+						if h, ok := parseHexRunes(runes[i+2 : i+10]); ok {
+							r = rune(h)
+							i += 9
+						} else {
+							Warning.Println("invalid escape sequence:", string(runes[i:i+10]))
+						}
+					} else {
+						Warning.Println("invalid escape sequence:", string(runes[i:i+10]))
+					}
+				default:
+					Warning.Println("invalid escape sequence:", string(runes[i:i+2]))
+				}
+			}
 			if prev != -1 && r == '-' {
 				rangeChars = true
 			} else if rangeChars {
 				for i := prev + 1; i <= r; i++ {
 					glyphID := sfnt.GlyphIndex(i)
 					if glyphID == 0 {
-						Warning.Println("glyph not found:", string(i))
+						Warning.Println("glyph not found:", printableRune(i))
 					} else {
 						glyphMap[glyphID] = true
 					}
@@ -103,7 +177,7 @@ func (cmd *Subset) Run() error {
 			} else {
 				glyphID := sfnt.GlyphIndex(r)
 				if glyphID == 0 {
-					Warning.Println("glyph not found:", string(r))
+					Warning.Println("glyph not found:", printableRune(r))
 				} else {
 					glyphMap[glyphID] = true
 				}
