@@ -191,9 +191,9 @@ func parseHexRunes(rs []rune) (uint64, bool) {
 		if '0' <= r && r <= '9' {
 			sum += uint64(r - '0')
 		} else if 'a' <= r && r <= 'f' {
-			sum += uint64(r - 'a')
+			sum += 10 + uint64(r-'a')
 		} else if 'A' <= r && r <= 'F' {
-			sum += uint64(r - 'A')
+			sum += 10 + uint64(r-'A')
 		} else {
 			return 0, false // invalid character
 		}
