@@ -17,7 +17,7 @@ type Subset struct {
 	Quiet         bool     `short:"q" desc:"Suppress output except for errors."`
 	Force         bool     `short:"f" desc:"Force overwriting existing files."`
 	Glyphs        []string `short:"g" name:"glyph" desc:"List of glyph IDs to keep, eg. 1-100."`
-	Chars         []string `short:"c" name:"char" desc:"List of literal characters to keep, eg. a-z. The same escape sequences are supported as for Go strings, adding \-."`
+	Chars         []string `short:"c" name:"char" desc:"List of literal characters to keep, eg. a-z. The same escape sequences are supported as for Go strings, where , and - also need escaping."`
 	Names         []string `short:"n" name:"name" desc:"List of glyph names to keep, eg. space."`
 	Unicodes      []string `short:"u" name:"unicode" desc:"List of unicode IDs to keep, eg. f0fc-f0ff."`
 	UnicodeRanges []string `short:"r" name:"range" desc:"List of unicode categories or scripts to keep, eg. L (for Letters) or Latin (latin script). See https://pkg.go.dev/unicode for all supported values."`
@@ -89,6 +89,7 @@ func (cmd *Subset) Run() error {
 		runes := []rune(s)
 		for i := 0; i < len(runes); i++ {
 			r := runes[i]
+			escaped := false
 			if r == '\\' && i+1 < len(runes) {
 				switch runes[i+1] {
 				case 'a':
@@ -118,7 +119,11 @@ func (cmd *Subset) Run() error {
 				case '\'':
 					r = '\u0027'
 					i++
+				case ',':
+					r = '\u002C'
+					i++
 				case '-':
+					escaped = true
 					r = '\u002D'
 					i++
 				case '\\':
@@ -161,7 +166,7 @@ func (cmd *Subset) Run() error {
 					Warning.Println("invalid escape sequence:", string(runes[i:i+2]))
 				}
 			}
-			if prev != -1 && r == '-' {
+			if prev != -1 && r == '-' && !escaped {
 				rangeChars = true
 			} else if rangeChars {
 				for i := prev + 1; i <= r; i++ {
