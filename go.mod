@@ -7,7 +7,7 @@ require (
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/tdewolff/canvas v0.0.0-20260406091912-5d4f7059846e
 	github.com/tdewolff/parse/v2 v2.8.12
-	github.com/tdewolff/test v1.0.11
+	github.com/tdewolff/test v1.0.12
 	golang.org/x/image v0.39.0
 	golang.org/x/text v0.36.0
 )
@@ -32,7 +32,7 @@ require (
 	github.com/wcharczuk/go-chart/v2 v2.1.2 // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
 	golang.org/x/net v0.53.0 // indirect
-	gonum.org/v1/plot v0.16.0 // indirect
+	gonum.org/v1/plot v0.17.0 // indirect
 	modernc.org/knuth v0.5.5 // indirect
 	modernc.org/token v1.1.0 // indirect
 	star-tex.org/x/tex v0.7.1 // indirect

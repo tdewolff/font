@@ -7,7 +7,7 @@ replace github.com/tdewolff/font => ../..
 require (
 	github.com/tdewolff/argp v0.0.0-20260420171815-209d4e7b26a0
 	github.com/tdewolff/canvas v0.0.0-20260406091912-5d4f7059846e
-	github.com/tdewolff/font v0.0.0-20260420164300-17bb0dfd257b
+	github.com/tdewolff/font v0.0.0-20260420205100-f6940a171d9c
 	github.com/tdewolff/parse/v2 v2.8.12
 	github.com/tdewolff/prompt v0.0.0-20260129133615-dc83e89202db
 	golang.org/x/image v0.39.0
