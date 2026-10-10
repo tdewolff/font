@@ -1066,26 +1066,22 @@ func transformGlyf(numGlyphs uint16, glyf *glyfTable, loca *locaTable) ([]byte, 
 			for _, x := range contour.XCoordinates[1:] {
 				if x < xMin {
 					xMin = x
-				}
-				if xMax < x {
+				} else if xMax < x {
 					xMax = x
 				}
 			}
-			if xMin == contour.XMin && xMax == contour.XMax {
-				for _, y := range contour.YCoordinates[1:] {
-					if y < yMin {
-						yMin = y
-					}
-					if yMax < y {
-						yMax = y
-					}
+			for _, y := range contour.YCoordinates[1:] {
+				if y < yMin {
+					yMin = y
+				} else if yMax < y {
+					yMax = y
 				}
-				if yMin == contour.YMin && yMax == contour.YMax {
-					bboxEqual = true
-				} else {
-					xMin, xMax = contour.XMin, contour.XMax
-					yMin, yMax = contour.YMin, contour.YMax
-				}
+			}
+			if xMin == contour.XMin && xMax == contour.XMax && yMin == contour.YMin && yMax == contour.YMax {
+				bboxEqual = true
+			} else {
+				xMin, xMax = contour.XMin, contour.XMax
+				yMin, yMax = contour.YMin, contour.YMax
 			}
 
 			// instruction stream
